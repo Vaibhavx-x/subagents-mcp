@@ -1,0 +1,3 @@
+In this repository, the helper function `fetch_cfg` needs to be renamed to `load_config`.
+
+Rename it everywhere: the definition, every call site across all files, and any references in docstrings or comments. Do not change any behaviour. Do not modify the test files.

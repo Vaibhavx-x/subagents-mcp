@@ -1,0 +1,5 @@
+The tests in `test_parser.py` fail because `parse_duration` does not exist yet.
+
+Implement `parse_duration` in `pkg/parser.py` so that every test in `test_parser.py` passes. It takes a duration string and returns the total number of seconds as an integer. Malformed input must raise ValueError.
+
+Do not modify the test file.

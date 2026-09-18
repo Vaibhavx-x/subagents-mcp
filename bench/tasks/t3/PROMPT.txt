@@ -1,0 +1,5 @@
+The test `test_cache.py::test_repeated_lookup` is failing.
+
+Find the root cause and fix it in the source code. Both `test_cache.py` and `test_smoke.py` must pass afterwards. Do not modify any test file.
+
+Note: `test_parser.py` fails at baseline for an unrelated reason and is out of scope. Ignore it.
