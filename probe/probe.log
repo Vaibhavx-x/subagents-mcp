@@ -1,0 +1,334 @@
+2026-09-18 12:55:56,140 | ############################################################
+2026-09-18 12:55:56,140 | probe server starting | pid=32620 | python=3.13.7
+2026-09-18 12:55:56,140 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 12:55:56,160 | === WHOAMI ===
+{
+  "client_capabilities": "experimental=None sampling=None elicitation=None roots=None extensions=None tasks=None",
+  "client_params": "<absent>",
+  "input_responses": null,
+  "label": "whoami",
+  "meta": "<absent>",
+  "protocol_version": "2026-07-28",
+  "request_id": "3",
+  "request_state": null
+}
+2026-09-18 12:55:56,275 | === ENVIRONMENT ===
+{
+  "PATH_entry_count": 49,
+  "PATH_present": true,
+  "agy_on_path": "C:\\Users\\vaibh\\AppData\\Local\\agy\\bin\\agy.EXE",
+  "cwd": "D:\\Projects\\subagents-mcp\\probe",
+  "env_keys": [
+    "APPDATA",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LOCALAPPDATA",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "USERNAME",
+    "USERPROFILE"
+  ],
+  "env_var_count": 12,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.7"
+}
+2026-09-18 12:55:56,350 | RESOLVER ask_to_proceed ran | topic='auto'
+2026-09-18 12:55:56,351 | === ASK_ONCE BODY ===
+{
+  "client_capabilities": "experimental=None sampling=None elicitation=None roots=None extensions=None tasks=None",
+  "client_params": "<absent>",
+  "input_responses": null,
+  "label": "ask_once-body",
+  "meta": "<absent>",
+  "protocol_version": "2026-07-28",
+  "request_id": "4",
+  "request_state": null
+}
+2026-09-18 12:55:56,351 | ASK_ONCE verdict=ACCEPTED proceed=True topic='auto'
+2026-09-18 13:29:21,437 | ############################################################
+2026-09-18 13:29:21,438 | probe server starting | pid=14648 | python=3.13.7
+2026-09-18 13:29:21,438 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 13:35:56,381 | ############################################################
+2026-09-18 13:35:56,381 | probe server starting | pid=33772 | python=3.13.7
+2026-09-18 13:35:56,381 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 13:41:49,259 | ############################################################
+2026-09-18 13:41:49,259 | probe server starting | pid=14900 | python=3.13.7
+2026-09-18 13:41:49,259 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 13:42:24,763 | ############################################################
+2026-09-18 13:42:24,763 | probe server starting | pid=6052 | python=3.13.7
+2026-09-18 13:42:24,763 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 13:42:42,985 | ############################################################
+2026-09-18 13:42:42,986 | probe server starting | pid=14900 | python=3.13.7
+2026-09-18 13:42:42,986 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 13:44:06,597 | ############################################################
+2026-09-18 13:44:06,597 | probe server starting | pid=23972 | python=3.13.7
+2026-09-18 13:44:06,597 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 13:44:45,145 | ############################################################
+2026-09-18 13:44:45,145 | probe server starting | pid=26816 | python=3.13.7
+2026-09-18 13:44:45,145 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 13:49:37,530 | === WHOAMI ===
+{
+  "client_capabilities": "experimental=None sampling=None elicitation=ElicitationCapability(form=FormElicitationCapability(), url=UrlElicitationCapability()) roots=RootsCapability(list_changed=True) extensions=None tasks=None",
+  "client_params": "<absent>",
+  "input_responses": null,
+  "label": "whoami",
+  "meta": "<absent>",
+  "protocol_version": "2026-07-28",
+  "request_id": "4",
+  "request_state": null
+}
+2026-09-18 13:49:37,698 | === ENVIRONMENT ===
+{
+  "PATH_entry_count": 41,
+  "PATH_present": true,
+  "agy_on_path": "C:\\Users\\vaibh\\AppData\\Local\\agy\\bin\\agy.EXE",
+  "cwd": "D:\\Projects\\subagents-mcp",
+  "env_keys": [
+    "ALLUSERSPROFILE",
+    "APPDATA",
+    "BUNDLED_DEBUGPY_PATH",
+    "CHOCOLATEYINSTALL",
+    "CHOCOLATEYLASTPATHUPDATE",
+    "CHROME_CRASHPAD_PIPE_NAME",
+    "CLAUDE_API_KEY",
+    "CLAUDE_CODE_SSE_PORT",
+    "COLORTERM",
+    "COMMONPROGRAMFILES",
+    "COMMONPROGRAMFILES(X86)",
+    "COMMONPROGRAMW6432",
+    "COMPUTERNAME",
+    "COMSPEC",
+    "COPILOT_DEBUG_NONCE",
+    "DRIVERDATA",
+    "EFC_11048_1592913036",
+    "EFC_11048_4126798990",
+    "GIT_ASKPASS",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "IGCCSVC_DB",
+    "INCLUDE",
+    "LANG",
+    "LIB",
+    "LOCALAPPDATA",
+    "LOGONSERVER",
+    "NUMBER_OF_PROCESSORS",
+    "ONEDRIVE",
+    "OS",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROCESSOR_IDENTIFIER",
+    "PROCESSOR_LEVEL",
+    "PROCESSOR_REVISION",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "PSMODULEPATH",
+    "PUBLIC",
+    "PY",
+    "PYCHARM",
+    "PYDEVD_DISABLE_FILE_VALIDATION",
+    "PYTHONSTARTUP",
+    "PYTHON_BASIC_REPL",
+    "SESSIONNAME",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TERM_PROGRAM",
+    "TERM_PROGRAM_VERSION",
+    "TMP",
+    "USERDOMAIN",
+    "USERDOMAIN_ROAMINGPROFILE",
+    "USERNAME",
+    "USERPROFILE",
+    "VSCODE_DEBUGPY_ADAPTER_ENDPOINTS",
+    "VSCODE_GIT_ASKPASS_EXTRA_ARGS",
+    "VSCODE_GIT_ASKPASS_MAIN",
+    "VSCODE_GIT_ASKPASS_NODE",
+    "VSCODE_GIT_IPC_HANDLE",
+    "VSCODE_INJECTION",
+    "VSCODE_PYTHON_AUTOACTIVATE_GUARD",
+    "WINDIR",
+    "ZES_ENABLE_SYSMAN"
+  ],
+  "env_var_count": 67,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.7"
+}
+2026-09-18 13:51:01,530 | === SPAWN CHECK ===
+{
+  "elapsed_s": 0.11,
+  "resolved_exe": "C:\\Users\\vaibh\\AppData\\Local\\agy\\bin\\agy.EXE",
+  "returncode": 0,
+  "stderr": "",
+  "stdout": "1.2.6\n"
+}
+2026-09-18 13:52:36,841 | RESOLVER ask_to_proceed ran | topic='auto'
+2026-09-18 13:52:36,842 | === ASK_ONCE BODY ===
+{
+  "client_capabilities": "experimental=None sampling=None elicitation=ElicitationCapability(form=FormElicitationCapability(), url=UrlElicitationCapability()) roots=RootsCapability(list_changed=True) extensions=None tasks=None",
+  "client_params": "<absent>",
+  "input_responses": null,
+  "label": "ask_once-body",
+  "meta": "<absent>",
+  "protocol_version": "2026-07-28",
+  "request_id": "6",
+  "request_state": null
+}
+2026-09-18 13:52:36,843 | ASK_ONCE verdict=ACCEPTED proceed=True topic='auto'
+2026-09-18 13:53:14,547 | RESOLVER ask_to_proceed ran | topic='delete-build-dir'
+2026-09-18 13:53:14,561 | RESOLVER ask_to_proceed ran | topic='delete-build-dir'
+2026-09-18 13:53:14,562 | === ASK_ONCE BODY ===
+{
+  "client_capabilities": "experimental=None sampling=None elicitation=ElicitationCapability(form=FormElicitationCapability(), url=UrlElicitationCapability()) roots=RootsCapability(list_changed=True) extensions=None tasks=None",
+  "client_params": "<absent>",
+  "input_responses": {
+    "__main__:ask_to_proceed": "meta=None action='cancel' content=None"
+  },
+  "label": "ask_once-body",
+  "meta": "<absent>",
+  "protocol_version": "2026-07-28",
+  "request_id": "8",
+  "request_state": "{\"v\":3,\"outcomes\":{},\"asked\":{\"__main__:ask_to_proceed\":\"cA1C7xvQQrmtUTHMae6WeQ\"}}"
+}
+2026-09-18 13:53:14,562 | ASK_ONCE verdict=CANCELLED topic='delete-build-dir'
+2026-09-18 13:54:02,530 | STALL start seconds=30
+2026-09-18 13:54:32,537 | STALL completed seconds=30 elapsed=30.0
+2026-09-18 13:54:46,416 | STALL start seconds=120
+2026-09-18 13:56:46,417 | STALL completed seconds=120 elapsed=120.0
+2026-09-18 13:57:28,803 | STALL start seconds=300
+2026-09-18 14:01:34,861 | SPIN round=1 prior_state=None
+2026-09-18 14:03:37,991 | SPIN round=1 prior_state=None
+2026-09-18 14:11:28,318 | STALL start seconds=180
+2026-09-18 14:14:28,319 | STALL completed seconds=180 elapsed=180.0
+2026-09-18 14:14:56,594 | STALL start seconds=240
+2026-09-18 14:16:51,431 | ############################################################
+2026-09-18 14:16:51,431 | probe server starting | pid=32940 | python=3.13.7
+2026-09-18 14:16:51,432 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 14:17:09,339 | ############################################################
+2026-09-18 14:17:09,340 | probe server starting | pid=29536 | python=3.13.7
+2026-09-18 14:17:09,340 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 14:18:25,058 | RESOLVER ask_to_proceed ran | topic='delete-build-dir'
+2026-09-18 14:18:25,074 | RESOLVER ask_to_proceed ran | topic='delete-build-dir'
+2026-09-18 14:18:25,076 | === ASK_ONCE BODY ===
+{
+  "client_capabilities": "experimental=None sampling=None elicitation=ElicitationCapability(form=FormElicitationCapability(), url=UrlElicitationCapability()) roots=RootsCapability(list_changed=True) extensions=None tasks=None",
+  "client_params": "<absent>",
+  "input_responses": {
+    "__main__:ask_to_proceed": "meta=None action='cancel' content=None"
+  },
+  "label": "ask_once-body",
+  "meta": "<absent>",
+  "protocol_version": "2026-07-28",
+  "request_id": "5",
+  "request_state": "{\"v\":3,\"outcomes\":{},\"asked\":{\"__main__:ask_to_proceed\":\"cA1C7xvQQrmtUTHMae6WeQ\"}}"
+}
+2026-09-18 14:18:25,076 | ASK_ONCE verdict=CANCELLED topic='delete-build-dir'
+2026-09-18 14:19:46,641 | STALL start seconds=600
+2026-09-18 14:19:56,718 | STALL heartbeat t=10s
+2026-09-18 14:20:06,800 | STALL heartbeat t=20s
+2026-09-18 14:20:16,873 | STALL heartbeat t=30s
+2026-09-18 14:20:26,936 | STALL heartbeat t=40s
+2026-09-18 14:20:37,002 | STALL heartbeat t=50s
+2026-09-18 14:20:47,107 | STALL heartbeat t=60s
+2026-09-18 14:20:57,172 | STALL heartbeat t=70s
+2026-09-18 14:21:07,251 | STALL heartbeat t=80s
+2026-09-18 14:21:17,323 | STALL heartbeat t=90s
+2026-09-18 14:21:27,412 | STALL heartbeat t=100s
+2026-09-18 14:21:37,484 | STALL heartbeat t=110s
+2026-09-18 14:21:47,563 | STALL heartbeat t=120s
+2026-09-18 14:21:57,632 | STALL heartbeat t=130s
+2026-09-18 14:22:07,690 | STALL heartbeat t=140s
+2026-09-18 14:22:17,764 | STALL heartbeat t=150s
+2026-09-18 14:22:27,832 | STALL heartbeat t=160s
+2026-09-18 14:22:37,914 | STALL heartbeat t=170s
+2026-09-18 14:22:46,643 | STALL CANCELLED at t=180.0s (seconds=600)
+2026-09-18 14:23:48,427 | RESOLVER ask_to_proceed ran | topic='012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+2026-09-18 14:23:48,433 | RESOLVER ask_to_proceed ran | topic='012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+2026-09-18 14:23:48,435 | === ASK_ONCE BODY ===
+{
+  "client_capabilities": "experimental=None sampling=None elicitation=ElicitationCapability(form=FormElicitationCapability(), url=UrlElicitationCapability()) roots=RootsCapability(list_changed=True) extensions=None tasks=None",
+  "client_params": "<absent>",
+  "input_responses": {
+    "__main__:ask_to_proceed": "meta=None action='cancel' content=None"
+  },
+  "label": "ask_once-body",
+  "meta": "<absent>",
+  "protocol_version": "2026-07-28",
+  "request_id": "8",
+  "request_state": "{\"v\":3,\"outcomes\":{},\"asked\":{\"__main__:ask_to_proceed\":\"Ssab_h90VY9bBh7csIyLrw\"}}"
+}
+2026-09-18 14:23:48,435 | ASK_ONCE verdict=CANCELLED topic='012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+2026-09-18 15:25:52,286 | ############################################################
+2026-09-18 15:25:52,287 | probe server starting | pid=34048 | python=3.13.7
+2026-09-18 15:25:52,287 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-18 15:27:04,242 | STALL start seconds=600
+2026-09-18 15:27:14,335 | STALL heartbeat t=10s
+2026-09-18 15:27:24,426 | STALL heartbeat t=20s
+2026-09-18 15:27:34,502 | STALL heartbeat t=30s
+2026-09-18 15:27:44,568 | STALL heartbeat t=40s
+2026-09-18 15:27:54,651 | STALL heartbeat t=50s
+2026-09-18 15:28:04,707 | STALL heartbeat t=60s
+2026-09-18 15:28:14,764 | STALL heartbeat t=70s
+2026-09-18 15:28:24,859 | STALL heartbeat t=80s
+2026-09-18 15:28:34,910 | STALL heartbeat t=90s
+2026-09-18 15:28:44,960 | STALL heartbeat t=100s
+2026-09-18 15:28:55,022 | STALL heartbeat t=110s
+2026-09-18 15:29:05,086 | STALL heartbeat t=120s
+2026-09-18 15:29:15,131 | STALL heartbeat t=130s
+2026-09-18 15:29:25,201 | STALL heartbeat t=140s
+2026-09-18 15:29:35,283 | STALL heartbeat t=150s
+2026-09-18 15:29:45,382 | STALL heartbeat t=160s
+2026-09-18 15:29:55,450 | STALL heartbeat t=170s
+2026-09-18 15:30:05,541 | STALL heartbeat t=180s
+2026-09-18 15:30:15,630 | STALL heartbeat t=190s
+2026-09-18 15:30:25,673 | STALL heartbeat t=200s
+2026-09-18 15:30:35,729 | STALL heartbeat t=210s
+2026-09-18 15:30:45,815 | STALL heartbeat t=220s
+2026-09-18 15:30:55,882 | STALL heartbeat t=230s
+2026-09-18 15:31:05,975 | STALL heartbeat t=240s
+2026-09-18 15:31:16,050 | STALL heartbeat t=250s
+2026-09-18 15:31:26,131 | STALL heartbeat t=260s
+2026-09-18 15:31:36,189 | STALL heartbeat t=270s
+2026-09-18 15:31:46,289 | STALL heartbeat t=280s
+2026-09-18 15:31:56,382 | STALL heartbeat t=290s
+2026-09-18 15:32:06,446 | STALL heartbeat t=300s
+2026-09-18 15:32:16,547 | STALL heartbeat t=310s
+2026-09-18 15:32:26,622 | STALL heartbeat t=320s
+2026-09-18 15:32:36,688 | STALL heartbeat t=330s
+2026-09-18 15:32:46,761 | STALL heartbeat t=340s
+2026-09-18 15:32:56,820 | STALL heartbeat t=350s
+2026-09-18 15:33:06,914 | STALL heartbeat t=360s
+2026-09-18 15:33:17,012 | STALL heartbeat t=370s
+2026-09-18 15:33:27,121 | STALL heartbeat t=380s
+2026-09-18 15:33:37,176 | STALL heartbeat t=390s
+2026-09-18 15:33:47,221 | STALL heartbeat t=400s
+2026-09-18 15:33:57,270 | STALL heartbeat t=410s
+2026-09-18 15:34:07,354 | STALL heartbeat t=420s
+2026-09-18 15:34:17,413 | STALL heartbeat t=430s
+2026-09-18 15:34:27,462 | STALL heartbeat t=440s
+2026-09-18 15:34:37,523 | STALL heartbeat t=450s
+2026-09-18 15:34:47,554 | STALL heartbeat t=460s
+2026-09-18 15:34:57,620 | STALL heartbeat t=470s
+2026-09-18 15:35:07,678 | STALL heartbeat t=480s
+2026-09-18 15:35:17,755 | STALL heartbeat t=490s
+2026-09-18 15:35:27,819 | STALL heartbeat t=500s
+2026-09-18 15:35:37,879 | STALL heartbeat t=510s
+2026-09-18 15:35:47,960 | STALL heartbeat t=520s
+2026-09-18 15:35:58,018 | STALL heartbeat t=530s
+2026-09-18 15:36:08,078 | STALL heartbeat t=540s
+2026-09-18 15:36:18,136 | STALL heartbeat t=550s
+2026-09-18 15:36:28,193 | STALL heartbeat t=560s
+2026-09-18 15:36:38,277 | STALL heartbeat t=570s
+2026-09-18 15:36:48,358 | STALL heartbeat t=580s
+2026-09-18 15:36:58,404 | STALL heartbeat t=590s
+2026-09-18 15:37:08,481 | STALL heartbeat t=600s
+2026-09-18 15:37:08,482 | STALL completed seconds=600 elapsed=604.2
+2026-09-18 18:26:54,506 | ############################################################
+2026-09-18 18:26:54,506 | probe server starting | pid=26888 | python=3.13.7
+2026-09-18 18:26:54,506 | log file: D:\Projects\subagents-mcp\probe\probe.log
