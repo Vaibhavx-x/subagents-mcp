@@ -24,3 +24,6 @@ bench/fixture_repo/
 
 # Job-application strategy notes — internal, not part of the public repo.
 ZUDDL.md
+
+# Internal planning / strategy docs — kept locally, not part of the public repo.
+CONTEXT.md
