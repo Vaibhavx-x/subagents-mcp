@@ -1,0 +1,12 @@
+# Normalise to LF in the repository.
+* text=auto eol=lf
+
+# Shell scripts MUST be LF in the working tree. core.autocrlf=true is common on
+# Windows, and a CRLF checkout makes Git Bash fail with "$'\r': command not
+# found" — which breaks the bench harness on a clean clone.
+*.sh   text eol=lf
+*.py   text eol=lf
+
+# Run logs are captured output; keep them byte-exact as evidence.
+bench/logs/*.log -text
+probe/probe.log  -text
