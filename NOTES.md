@@ -165,3 +165,25 @@ Baseline truth: `pkg/parser.py` contains no functions at all, so
 `test_parser.py` fails by construction. That is what makes t3's original prompt
 ("the whole test suite must pass") unsatisfiable without also doing t2's work —
 harness defect D4.
+
+## 11. The re-run landed, and moved the limitation rather than removing it
+
+t1 was re-run on the fixed harness: 8 runs, all four configurations, **8/8
+passed**. The multi-file column is real data now rather than a recomputation,
+and the ordering held — `gemini-3.8-flash-low` renamed a symbol across four
+files, call sites and docstrings included, **spending zero thinking tokens**,
+and was the fastest configuration doing it.
+
+That was the result most worth having, because a scoped multi-file refactor is
+the shape a fan-out worker actually performs.
+
+But closing the gap exposed the real one. The bench now stands at **23 of 23
+graded runs passed** — every configuration, every task. A bench where nothing
+ever fails cannot rank quality; it ranks cost, and the "A matches the others"
+claim is a statement about the tasks, not about the models.
+
+So the honest phrasing is **"as good on tasks none of them failed"**, and the
+most valuable thing this bench could gain is a task some configuration loses.
+One non-monotonic result is already visible — C beat B on t1 (107 s vs 128 s) —
+which at n = 2 is most likely noise, and is a reminder of how soft these medians
+still are.

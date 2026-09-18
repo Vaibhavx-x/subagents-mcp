@@ -1,7 +1,7 @@
 # Worker model benchmark — results
 
 Four model configurations × three tasks × two repeats, run 2026-09-18 against
-`agy` CLI 1.2.6. Raw logs in [`logs/`](logs/), one JSON document per run; the
+`agy` CLI 1.2.6, plus an 8-run re-run of t1 after the harness audit. Raw logs in [`logs/`](logs/), one JSON document per run; the
 joined table is [`results.csv`](results.csv).
 
 **Read the caveats in §3 before quoting any number here.** This bench ranks
@@ -11,23 +11,41 @@ joined table is [`results.csv`](results.csv).
 
 ## 1. The table
 
-Two different samples, kept apart on purpose. **Cost** medians use every t2/t3
-run that completed — a `usage` block is a valid measurement whether or not
-`check.sh` graded the run. **Pass rate** uses only runs that were actually
-graded. t1 is excluded from both — see defect D1.
+Two different samples, kept apart on purpose. **Cost** medians use every run that
+completed — a `usage` block is a valid measurement whether or not `check.sh`
+graded the run. **Pass rate** uses only runs that were actually graded.
 
 | config | cost n | graded | pass | med wall s | med out tok | med thinking | med input tok | med cache-read |
 |---|---|---|---|---|---|---|---|---|
-| **A · gemini-3.8-flash-low** | 4 | 4 | 4/4 | **55.9** | **1,564** | **0** | 183,048 | 74,888 |
-| D · gemini-3.7-flash-medium | 4 | 4 | 4/4 | 66.6 | 4,759 | 2,810 | 165,403 | 178,112 |
-| B · gemini-3.8-flash-medium | 4 | 4 | 4/4 | 105.7 | 7,333 | 5,312 | 248,639 | 376,213 |
-| C · gemini-3.8-flash-high | 4 | **3** | 3/3 | 123.3 | 11,076 | 7,860 | 288,853 | 562,365 |
+| **A · gemini-3.8-flash-low** | 6 | 6 | 6/6 | **58.2** | **1,735** | **0** | 137,022 | 80,979 |
+| D · gemini-3.7-flash-medium | 6 | 6 | 6/6 | 72.6 | 4,170 | 2,282 | 161,322 | 248,926 |
+| B · gemini-3.8-flash-medium | 6 | 6 | 6/6 | 118.4 | 6,915 | 4,530 | 239,682 | 303,302 |
+| C · gemini-3.8-flash-high | 6 | **5** | 5/5 | 120.0 | 9,850 | 6,452 | 263,508 | 442,943 |
 
 `med wall s` is externally measured and **includes ~9.7 s of CLI startup**. The
 earlier published table used agy's internal `duration_seconds`, which excludes
-it. Config C's cost figures are unchanged from that table; what was overstated
-there was its **graded count** — 4 rather than 3 — because defect D2 voided one
-run's grade while its tokens were still quoted.
+it. Config C shows 5 graded rather than 6 because defect D2 voided one run's
+grade while its tokens were still quoted; its cost figures are unaffected.
+
+### The multi-file case, recovered
+
+t1 was void under defect D1 and has now been re-run on the fixed harness:
+
+| config | n | pass | med wall s | med out tok | med thinking |
+|---|---|---|---|---|---|
+| **A · 3.8 low** | 2 | 2/2 | **58** | **1,735** | **0** |
+| D · 3.7 medium | 2 | 2/2 | 78 | 3,521 | 1,080 |
+| C · 3.8 high | 2 | 2/2 | 107 | 4,863 | 2,110 |
+| B · 3.8 medium | 2 | 2/2 | 128 | 4,645 | 1,898 |
+
+**The ordering holds on the one task shape that was previously unmeasured.** A
+renamed a symbol across four files, with every call site and docstring updated,
+spending zero thinking tokens — and was the fastest configuration doing it. This
+is the shape a fan-out worker actually performs, so it is the result that most
+needed to exist.
+
+Note C beats B here (107 s vs 128 s) — the only place the effort ladder is not
+monotonic, and a reminder that n = 2 medians are soft.
 
 ### Decision
 
@@ -52,7 +70,7 @@ matrix is gone; there is one default config.
 
 ## 2. The input-token finding — the project's thesis
 
-Across all 25 runs:
+Across all 33 runs:
 
 | | min | max |
 |---|---|---|
@@ -75,22 +93,26 @@ Two consequences for the demo:
 
 ## 3. What this bench cannot tell you
 
-- **The multi-file case is unmeasured.** t1 is void (D1), and it was the only
-  task spanning several files. A fan-out worker doing a scoped multi-file
-  refactor is precisely the untested shape.
-- **Ceiling effect.** Every gradeable run passed. All eight t3 runs identified
-  the root cause on their first turn. The bench cannot separate these
-  configurations on quality — it currently ranks cost only.
-- **n = 2.** A single flaky run moves a median by ~30%. Repeats should be 5.
-- **Config C has 3 graded runs, not 4**, because of D2. Its cost medians are
+- **Ceiling effect — the big one.** **23 of 23 graded runs passed**, across all
+  four configurations and all three tasks. All eight t3 runs identified the root
+  cause on their first turn. The bench therefore has **no power to separate
+  these configurations on quality**; it ranks cost, and nothing else. A harder
+  task set is the single most valuable improvement available.
+- **n = 2.** A single flaky run moves a median by ~30%. C beating B on t1 is
+  probably noise, not signal. Repeats should be 5.
+- **Config C has 5 graded runs, not 6**, because of D2. Its cost medians are
   unaffected — the voided run completed and its `usage` block is valid.
-- **No failure modes were observed at all.** All 25 logs are `status: SUCCESS`.
-  The escalation ladder is therefore designed but unexercised.
+- **No failure modes were observed at all.** All 33 logs are `status: SUCCESS`.
+  There was never a rate limit or a timeout. **The escalation ladder is designed
+  but entirely unexercised**, and the fallback path is therefore untested code.
+- **One fixture, one language.** Everything here is a small synthetic Python
+  package. Nothing generalises to large repos or other languages.
 
 ## 4. Harness defects found by audit
 
-All six are fixed; the table above is computed post-fix from the original logs,
-except where a defect requires re-running (D1, D4).
+All six are fixed. The table above is computed post-fix from the original logs;
+t1 was additionally **re-run on the fixed harness**, so its column is real data
+rather than a recomputation.
 
 | # | Defect | Severity | Fix |
 |---|---|---|---|
@@ -110,12 +132,17 @@ re-run), `superseded_smoke` (D6).
 
 ## 5. Outstanding
 
-**Re-run t1** — 8 runs, ~15 min — to recover the multi-file column. The harness
-is fixed; the runs have not been redone. Until then the multi-file case is
-unmeasured and must not be implied.
+**t1 has been re-run and the multi-file column is recovered** — the gap that
+blocked a complete table is closed.
 
-Raising repeats from 2 to 5 would cost ~1 hour and is the cheapest way to make
-the medians trustworthy.
+What would still improve this, in order of value:
+
+1. **A harder task set.** 23/23 passing means the bench cannot rank quality at
+   all. Until some configuration fails something, "A matches the others" is a
+   statement about the tasks, not the models.
+2. **Repeats from 2 to 5** (~1 hour) — the cheapest way to firm up the medians.
+3. **Exercise a failure.** Nothing has ever rate-limited or timed out here, so
+   the escalation ladder has never run.
 
 ## 6. Reproducing
 

@@ -19,7 +19,7 @@ and a handle. `collect` reads results back, **including after a timeout**.
 
 ## Why
 
-Measured across 25 benchmark runs (`bench/RESULTS.md`):
+Measured across 33 benchmark runs (`bench/RESULTS.md`):
 
 | | min | max |
 |---|---|---|

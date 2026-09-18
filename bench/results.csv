@@ -24,3 +24,11 @@ run_id,config,model,level,task,repeat,passed,wall_ms,status,agy_status,input_tok
 1789714356-D-t1-2,D,gemini-3.7-flash-medium,medium,t1,2,0,72310,void_d1,SUCCESS,159777,3798,1379,307450,163575,1,63.6008433,ok_candidate
 1789714434-D-t2-1,D,gemini-3.7-flash-medium,medium,t2,1,1,62691,ok,SUCCESS,130713,4817,2979,109378,135530,1,52.241575,ok_candidate
 1789714503-A-t3-2,A,gemini-3.8-flash-low,low,t3,2,1,77216,ok,SUCCESS,241902,2107,0,137624,244009,1,67.0183669,ok_candidate
+1789740390-D-t1-1,D,gemini-3.7-flash-medium,medium,t1,1,1,74638,ok,SUCCESS,158433,3596,1192,303321,162029,1,63.9343157,ok_candidate
+1789740471-D-t1-2,D,gemini-3.7-flash-medium,medium,t1,2,1,81154,ok,SUCCESS,160076,3446,968,299253,163522,1,70.4003583,ok_candidate
+1789740559-B-t1-1,B,gemini-3.8-flash-medium,medium,t1,1,1,142932,ok,SUCCESS,252136,4674,1910,287144,256810,1,132.1504588,ok_candidate
+1789740708-A-t1-1,A,gemini-3.8-flash-low,low,t1,1,1,59632,ok,SUCCESS,147919,1817,0,68831,149736,1,48.7878578,ok_candidate
+1789740774-A-t1-2,A,gemini-3.8-flash-low,low,t1,2,1,56753,ok,SUCCESS,120171,1653,0,93127,121824,1,47.3735204,ok_candidate
+1789740837-C-t1-2,C,gemini-3.8-flash-high,high,t1,2,1,114033,ok,SUCCESS,233281,4683,1874,327453,237964,1,104.8598951,ok_candidate
+1789740957-C-t1-1,C,gemini-3.8-flash-high,high,t1,1,1,99677,ok,SUCCESS,238695,5043,2346,283181,243738,1,91.4469374,ok_candidate
+1789741063-B-t1-2,B,gemini-3.8-flash-medium,medium,t1,2,1,113258,ok,SUCCESS,227228,4616,1885,319460,231844,1,103.7339115,ok_candidate
