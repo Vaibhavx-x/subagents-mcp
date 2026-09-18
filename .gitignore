@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets
+.env
+*.key
+
+# Server state (SQLite lands beside the server; WAL mode adds -wal/-shm)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# Bench fixture is BUILT from bench/fixture_src/ by bench/setup.sh.
+# It carries its own nested .git, which would become a gitlink here.
+bench/fixture_repo/
+
+# Stale snapshot archives of bench/ and probe/, superseded by the live dirs
+*.zip
+
+# Job-application strategy notes — internal, not part of the public repo.
+ZUDDL.md
