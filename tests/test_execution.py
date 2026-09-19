@@ -273,7 +273,9 @@ def test_completed_tasks_are_skipped_on_re_execution(cfg, workspace):
     first: list = []
     run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
                 runner=recording_runner(first, {"b": "failed"})))
-    assert sorted(first) == ["a", "b"]
+    # b appears twice: it failed, so it was retried once on the escalation
+    # model. That is Phase 3 behaviour and is pinned in test_escalation.py.
+    assert first == ["a", "b", "b"]
 
     second: list = []
     outcome = run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,

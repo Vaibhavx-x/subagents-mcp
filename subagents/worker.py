@@ -391,6 +391,16 @@ async def run_worker(
             finished=_now(),
             timed_out=timed_out,
         )
+    except asyncio.CancelledError:
+        # The tool call was cancelled at the client deadline, or the wave was
+        # torn down. Kill the tree on the way out: `close()` alone relies on
+        # KILL_ON_JOB_CLOSE and is a no-op on POSIX, so a cancelled fan-out
+        # would leave live agy processes spending tokens with nobody reading
+        # the answer. The worker owns its own cleanup rather than the caller
+        # reaching into it.
+        log.warning("worker %s cancelled; killing process tree", task_ref)
+        group.terminate()
+        raise
     finally:
         # A pipe held open by a grandchild leaves asyncio's transport
         # unfinalised, which surfaces later as a ResourceWarning from __del__
