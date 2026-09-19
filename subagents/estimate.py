@@ -1,13 +1,17 @@
-"""Wall-clock projection for a proposed plan.
+"""Wall-clock projection, checked against the client's ACTUAL deadline.
 
-The server cannot read the client's `timeoutSeconds`, but it can size its own
-plan and say so. Without that, a default install runs a large fan-out, gets
-cancelled at 180s with no explanation, and the project looks broken.
+The server cannot set `timeoutSeconds`, but it can read it, so the deadline
+side of this is a fact rather than a guess.
 
-Spawn overhead is real and measured, not padding: agy CLI startup was 8.7-11.9s
-(median 9.7s) across 33 benchmark runs, constant across models and tasks. agy's
-own `duration_seconds` excludes it. It is paid PER WAVE, not amortised across a
-fan-out, because waves run sequentially.
+The duration side stays a guess, and deliberately so: a worker may call other
+MCP servers, install packages, or run a test suite, none of which a plan can
+predict. That asymmetry drives the design -- compare the plan's WORST CASE
+(per-worker timeout, which is a real ceiling) against the client's configured
+deadline (a real number), rather than betting on the expected time.
+
+Spawn overhead is measured, not padding: agy CLI startup was 8.7-11.9s
+(median 9.7s) across 33 benchmark runs, constant across models. It is paid
+PER WAVE, since waves run sequentially.
 """
 
 from __future__ import annotations
@@ -15,7 +19,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .config import DEFAULT_TOOL_DEADLINE_S, EXPECTED_WORKER_S, SPAWN_OVERHEAD_S
+from .client_config import DEFAULT_DEADLINE_S, ClientTimeout
+from .config import EXPECTED_WORKER_S, SPAWN_OVERHEAD_S
 from .models import Task
 
 
@@ -26,39 +31,75 @@ class Estimate:
     wave_count: int
     worker_count: int
     max_parallel: int
-    exceeds_default_deadline: bool
+    deadline_s: int
+    deadline_is_explicit: bool
+    deadline_known: bool
+    config_path: str = ""
+    server_name: str = ""
+
+    @property
+    def fits_deadline(self) -> bool:
+        return self.worst_case_s <= self.deadline_s
 
     @property
     def expected_exceeds_deadline(self) -> bool:
-        return self.expected_s > DEFAULT_TOOL_DEADLINE_S
+        return self.expected_s > self.deadline_s
+
+    @property
+    def deadline_note(self) -> str:
+        """One line stating what the deadline actually is and where it came from."""
+        if self.deadline_is_explicit:
+            return f"client deadline : {self.deadline_s}s (timeoutSeconds in {self.config_path})"
+        if self.deadline_known:
+            return (
+                f"client deadline : {DEFAULT_DEADLINE_S}s "
+                f"(no timeoutSeconds set for {self.server_name!r} -- this is the default)"
+            )
+        return f"client deadline : assumed {DEFAULT_DEADLINE_S}s (could not read the client config)"
 
     @property
     def warning(self) -> str:
-        """Warn on worst case, but scale the language to the actual risk.
-
-        With a 600s per-worker timeout every plan has a worst case above 180s,
-        so an undifferentiated warning would fire on all of them and stop
-        carrying information. The distinction that matters to the parent is
-        whether cancellation is LIKELY (the expected time already exceeds the
-        deadline) or merely POSSIBLE (only the worst case does).
-        """
-        if not self.exceeds_default_deadline:
+        if self.fits_deadline:
             return ""
 
-        fix = (
-            'Set "timeoutSeconds": 900 in mcp_config.json. If this call is '
-            "cancelled anyway, call collect(plan_id) -- do not retry execute_plan."
+        # A worker's duration is not predictable, so the honest framing is
+        # about the ceiling, not the estimate.
+        head = (
+            f"this plan's worst case (~{self.worst_case_s}s) exceeds the "
+            f"{self.deadline_s}s deadline"
         )
-        if self.expected_exceeds_deadline:
-            return (
-                f"WARNING: this plan will very likely be cancelled. Expected ~{self.expected_s}s "
-                f"already exceeds the {DEFAULT_TOOL_DEADLINE_S}s default tool-call deadline "
-                f"(worst case ~{self.worst_case_s}s). {fix}"
+        tail = (
+            "If the call is cancelled, call collect(plan_id) for the workers that "
+            "finished -- do not retry execute_plan."
+        )
+
+        if self.deadline_is_explicit:
+            # They configured a deadline and the plan still overruns it. The fix
+            # is a smaller plan or a bigger number, not boilerplate about setup.
+            likely = (
+                f" Expected ~{self.expected_s}s is also over it, so cancellation is likely."
+                if self.expected_exceeds_deadline
+                else f" Expected ~{self.expected_s}s fits, so it may well complete."
             )
+            return (
+                f"WARNING: {head}, which is set in your config.{likely} "
+                f"Either raise timeoutSeconds, lower max_parallel's workload, or split "
+                f"the plan into fewer waves. {tail}"
+            )
+
+        if self.deadline_known:
+            # Definite: we read the config and there is no timeoutSeconds.
+            return (
+                f"WARNING: {head}. Your client config ({self.config_path}) has NO "
+                f"timeoutSeconds for {self.server_name!r}, so every call is cancelled at "
+                f"{DEFAULT_DEADLINE_S}s. Add \"timeoutSeconds\": 900 to that entry and "
+                f"restart the session -- or run: python server.py --fix-config. {tail}"
+            )
+
         return (
-            f"NOTE: expected ~{self.expected_s}s is within the {DEFAULT_TOOL_DEADLINE_S}s default "
-            f"deadline, but the worst case is ~{self.worst_case_s}s, so a slow worker could be "
-            f"cancelled. {fix}"
+            f"NOTE: {head} assumed for an unconfigured client. The client config could "
+            f"not be read, so this may be wrong. If timeoutSeconds is unset, calls are "
+            f"cancelled at {DEFAULT_DEADLINE_S}s. {tail}"
         )
 
 
@@ -72,6 +113,7 @@ def estimate_plan(
     *,
     max_parallel: int,
     worker_timeout_s: int,
+    client_timeout: ClientTimeout | None = None,
 ) -> Estimate:
     if max_parallel < 1:
         max_parallel = 1
@@ -85,5 +127,9 @@ def estimate_plan(
         wave_count=len(waves),
         worker_count=sum(len(w) for w in waves),
         max_parallel=max_parallel,
-        exceeds_default_deadline=worst > DEFAULT_TOOL_DEADLINE_S,
+        deadline_s=client_timeout.effective_s if client_timeout else DEFAULT_DEADLINE_S,
+        deadline_is_explicit=bool(client_timeout and client_timeout.is_explicit),
+        deadline_known=bool(client_timeout and client_timeout.known),
+        config_path=str(client_timeout.config_path) if client_timeout else "",
+        server_name=client_timeout.server_name or "" if client_timeout else "",
     )

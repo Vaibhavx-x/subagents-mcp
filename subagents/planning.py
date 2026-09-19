@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .client_config import ClientTimeout
 from .config import Config
 from .db import init_db
 from .digest import compute_digest
@@ -128,7 +129,12 @@ def build_tasks(raw_tasks: list[dict], root: Path, default_model: str) -> list[T
     return tasks
 
 
-def propose(tasks_json: str, workspace_root: str, config: Config) -> ProposedPlan:
+def propose(
+    tasks_json: str,
+    workspace_root: str,
+    config: Config,
+    client_timeout: ClientTimeout | None = None,
+) -> ProposedPlan:
     root = resolve_workspace_root(workspace_root, config.allowed_roots)
     tasks = build_tasks(parse_tasks_json(tasks_json), root, config.model)
 
@@ -143,7 +149,10 @@ def propose(tasks_json: str, workspace_root: str, config: Config) -> ProposedPla
 
     waves = group_into_waves(tasks)
     estimate = estimate_plan(
-        waves, max_parallel=config.max_parallel, worker_timeout_s=config.worker_timeout_s
+        waves,
+        max_parallel=config.max_parallel,
+        worker_timeout_s=config.worker_timeout_s,
+        client_timeout=client_timeout,
     )
 
     warnings: list[str] = []
@@ -232,6 +241,7 @@ def render(plan: ProposedPlan) -> str:
         f"  estimate       : ~{plan.estimate.expected_s}s expected, "
         f"~{plan.estimate.worst_case_s}s worst case"
     )
+    add(f"  {plan.estimate.deadline_note}")
     add("")
 
     for index, wave in enumerate(plan.waves):
