@@ -640,3 +640,33 @@ warned that the worst case (~1220s) exceeded the 900s client deadline, which
 was true and unhelpful -- worst case assumes every worker burns its full
 600s budget. Both numbers are honest and the expected one is badly calibrated,
 which is the standing argument for p90 over a benchmark median.
+
+## 30. The escalation retry was not taint-checked
+
+Found by re-reading the wave loop rather than by a failure, which is why it is
+worth writing down: nothing would have reported it.
+
+Taint is computed from a snapshot pair taken around the wave. Escalation runs
+*after* the second snapshot -- deliberately, so a retry cannot pollute the
+window it would be measured in. The consequence nobody wrote down: **a retry's
+filesystem changes were never compared against anything.** A worker that failed
+and then, on the stronger model, wrote files it had not declared came back
+clean. The verdict stored against it was the one computed from the attempt that
+did nothing.
+
+That is a hole in the only control that survives the human approval, and it sat
+in the exact path a failure takes -- which is when a worker is most likely to
+do something unexpected.
+
+Each retry now gets its own snapshot pair. It runs alone, so its attribution is
+per-task rather than per-wave, which is strictly better than the wave it came
+from. Verified by deleting the fix and watching the test fail.
+
+Found alongside it: `started += len(result.escalated)` added the running total
+each wave instead of that wave's retries, so `executions.workers_started`
+claimed more workers than ever ran. Two waves with one escalation each recorded
+three extra.
+
+*Lesson kept: "escalation happens after the wave so a retry cannot pollute the
+snapshot" was a correct reason for a decision whose consequence I never
+followed through. The comment explained the choice and hid the gap.*

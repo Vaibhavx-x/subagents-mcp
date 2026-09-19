@@ -302,3 +302,33 @@ def test_an_async_progress_callback_is_awaited(cfg, workspace):
     run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
                 runner=timing_runner([]), progress=async_progress))
     assert seen == [(1, 1)]
+
+
+def test_workers_started_is_not_inflated_by_earlier_waves(cfg, workspace):
+    """`result.escalated` accumulates across waves, so adding its length each
+    time counted earlier waves again -- the audit row claimed more workers than
+    ever ran."""
+    plan = make_plan(
+        cfg, workspace,
+        task_entry("writer", reads=["README.md"], writes=["pkg/config.py"]),
+        task_entry("reader", reads=["pkg/config.py"], writes=["out.txt"]),
+    )
+
+    calls: list = []
+
+    async def runner(task_ref, command, *, timeout_s, cwd, model, env=None):
+        calls.append(task_ref)
+        # Both tasks fail once, then succeed -- one escalation per wave.
+        status = "failed" if calls.count(task_ref) == 1 else "ok"
+        return make_result(task_ref, status)
+
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg, runner=runner))
+
+    conn = connect(cfg.db_path)
+    try:
+        row = conn.execute(
+            "SELECT workers_started FROM executions WHERE plan_id = ?", (plan.plan_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["workers_started"] == len(calls) == 4

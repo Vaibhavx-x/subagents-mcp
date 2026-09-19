@@ -149,3 +149,53 @@ def test_a_failed_worker_still_gets_a_taint_verdict(cfg, workspace):
 
     assert outcome.tainted_refs == ["a"]
     assert run_row(cfg, "a")["tainted"] == 1
+
+
+def test_an_escalation_retry_is_also_taint_checked(cfg, workspace):
+    """The wave's snapshot closes before escalation runs.
+
+    Without a snapshot pair around the retry, a worker that failed and then
+    wrote undeclared files on its second attempt would be reported clean --
+    a hole in the only control that survives the human approval.
+    """
+    from test_execution import make_result
+
+    plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"], writes=["a.txt"]))
+    attempts = {"n": 0}
+
+    async def runner(task_ref, command, *, timeout_s, cwd, model, env=None):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return make_result(task_ref, "failed")
+        # The retry succeeds -- and strays.
+        (Path(cwd) / "a.txt").write_text("done\n", encoding="utf-8")
+        (Path(cwd) / "stray_on_retry.txt").write_text("oops\n", encoding="utf-8")
+        return make_result(task_ref, "ok")
+
+    outcome = run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg, runner=runner))
+
+    assert attempts["n"] == 2, "the failure was not escalated"
+    assert outcome.tainted_refs == ["a"], "the retry's undeclared write went unnoticed"
+    assert any("stray_on_retry" in p for p in outcome.taints["a"].paths)
+    assert run_row(cfg, "a")["tainted"] == 1
+
+
+def test_a_clean_escalation_retry_clears_the_earlier_verdict(cfg, workspace):
+    """The retry replaces the attempt, so its verdict must replace the old one
+    rather than leaving a stale taint attached to a run that did not cause it."""
+    from test_execution import make_result
+
+    plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"], writes=["a.txt"]))
+    attempts = {"n": 0}
+
+    async def runner(task_ref, command, *, timeout_s, cwd, model, env=None):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return make_result(task_ref, "unparseable")
+        (Path(cwd) / "a.txt").write_text("done\n", encoding="utf-8")
+        return make_result(task_ref, "ok")
+
+    outcome = run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg, runner=runner))
+
+    assert outcome.tainted_refs == []
+    assert outcome.taints["a"].attribution == "task", "a retry runs alone"

@@ -545,12 +545,15 @@ async def execute(
 
             # Escalation runs after the wave, so a retry cannot overlap the
             # snapshot window it would otherwise pollute.
-            recovered = await _escalate_wave(
+            recovered, retries = await _escalate_wave(
                 runnable, worker_results, result, config, plan_id, wave_index,
                 sem, run_one, began, deadline_s,
+                stored.workspace_root, ignore,
             )
             failed -= recovered
-            started += len(result.escalated)
+            # `retries`, not len(result.escalated): that list accumulates across
+            # every wave, so adding it each time counts earlier waves again.
+            started += retries
 
     except asyncio.CancelledError:
         # Everything already written stays written, and run_worker kills its
@@ -572,14 +575,24 @@ async def execute(
 
 
 async def _escalate_wave(runnable, worker_results, result, config, plan_id,
-                         wave_index, sem, run_one, began, deadline_s) -> set[str]:
+                         wave_index, sem, run_one, began, deadline_s,
+                         workspace_root, ignore) -> tuple[set[str], int]:
     """Retry this wave's eligible failures once on the stronger model.
 
     Sequential, not gathered: an escalation is already the expensive path, and
     firing several at once is the surest way to turn a partial result into a
     cancelled one.
+
+    Each retry gets its OWN snapshot pair. The wave's snapshot closed before
+    this function ran, so without one a retry's filesystem changes would never
+    be compared against anything -- a worker that failed, then wrote undeclared
+    files on the second attempt, would be reported clean. Since a retry runs
+    alone, its attribution is per-task rather than per-wave.
+
+    Returns the tasks that recovered, and how many retries were actually spent.
     """
     recovered: set[str] = set()
+    attempts = 0
     for task, worker_result in zip(runnable, worker_results):
         if not should_escalate(worker_result, result.taints.get(task.task_ref)):
             continue
@@ -591,7 +604,21 @@ async def _escalate_wave(runnable, worker_results, result, config, plan_id,
 
         log.info("plan %s: escalating %s to %s", plan_id, task.task_ref,
                  config.model_escalate)
+        declared = declared_paths([task])
+        before = await asyncio.to_thread(snapshot, workspace_root, declared, ignore=ignore)
         retry = await run_one(task, wave_index, sem, model=config.model_escalate)
+        after = await asyncio.to_thread(snapshot, workspace_root, declared, ignore=ignore)
+
+        report = compare(before, after, task, wave_declared=declared, attribution="task")
+        result.taints[task.task_ref] = report
+        if report.tainted:
+            log.warning("plan %s: %s tainted on retry -- %s", plan_id, task.task_ref,
+                        report.describe())
+        await asyncio.shield(
+            asyncio.to_thread(persist_taint, config, plan_id, task.task_ref, report)
+        )
+
+        attempts += 1
         result.escalated.append(task.task_ref)
         # Replace the failed record rather than appending: the plan has one
         # task, and two rows for it would make `collect` ambiguous.
@@ -599,7 +626,7 @@ async def _escalate_wave(runnable, worker_results, result, config, plan_id,
         result.results.append(retry)
         if retry.ok:
             recovered.add(task.task_ref)
-    return recovered
+    return recovered, attempts
 
 
 def collect_plan(config: Config, plan_id: str) -> list[dict]:
