@@ -18,7 +18,6 @@ import asyncio
 import inspect
 import json
 import logging
-import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -29,7 +28,7 @@ from .config import RATE_LIMIT_ATTEMPTS, RATE_LIMIT_BACKOFF_S, Config
 from .db import connect, init_db, write_transaction
 from .digest import compute_digest
 from .errors import PlanRefused
-from .hashing import IgnoreSpec, Snapshot, TaintReport, compare, snapshot
+from .hashing import IgnoreSpec, TaintReport, compare, snapshot
 from .models import Task
 from .waves import build_edges
 from .worker import (
