@@ -37,6 +37,20 @@ delegates them carries five summaries.
 All three tools, end to end against a real worker, with the workers in a wave
 running at the same time.
 
+**Measured, six real workers on the same three-task plan:**
+
+| `max_parallel` | wall clock |
+|---|---|
+| 4 | **12.2 s** |
+| 1 | 33.3 s |
+
+**2.73x**, and the mechanism is worth stating because it bounds the benefit:
+`agy` costs ~9.7 s of process startup per worker (measured over 33 benchmark
+runs), so three sequential workers pay that toll three times. Running them
+together pays it once. Token usage was within noise of identical — 76.6k
+against 68.4k input — because scheduling does not change how much work there
+is, only how long you wait for it.
+
 **`propose_plan(tasks_json, workspace_root)`** — validates a set of sub-tasks
 and returns an executable plan. Read-only; spawns nothing.
 
@@ -93,7 +107,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 293 tests, no API calls
+python -m pytest                    # 294 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens

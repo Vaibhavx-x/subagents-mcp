@@ -238,3 +238,41 @@ def test_a_worker_session_can_still_propose(cfg, workspace, monkeypatch):
         "workspace_root": str(workspace),
     })
     assert result.is_error is False, text_of(result)
+
+
+def test_progress_notifications_actually_reach_the_client(cfg, workspace, fake_worker):
+    """Half of the report_progress question, answered without a human.
+
+    Whether agy *renders* progress is still unknown and needs someone watching
+    a session. Whether we emit it correctly over the protocol does not: the
+    SDK's client takes a progress_callback, so a notification either arrives or
+    it does not. Worth pinning because ctx.report_progress is a coroutine, and
+    the version that forgot to await it sent nothing while raising only a
+    warning nobody reads.
+    """
+    plan = make_plan(
+        cfg, workspace,
+        task_entry("writer", reads=["README.md"], writes=["pkg/config.py"]),
+        task_entry("reader", reads=["pkg/config.py"], writes=["out.txt"]),
+    )
+    seen: list = []
+
+    async def main():
+        async def on_progress(progress, total, message):
+            seen.append((progress, total, message))
+
+        async with Client(server.mcp) as client:
+            return await client.call_tool(
+                "execute_plan",
+                {"affects": GOOD_SCOPE, "plan_id": plan.plan_id,
+                 "plan_digest": plan.plan_digest},
+                progress_callback=on_progress,
+            )
+
+    result = anyio.run(main)
+    assert result.is_error is False, text_of(result)
+
+    assert seen, "no progress notification reached the client"
+    assert [p for p, _, _ in seen] == [1, 2], f"expected one per wave, got {seen}"
+    assert all(total == 2 for _, total, _ in seen)
+    assert any("wave" in (msg or "") for _, _, msg in seen)
