@@ -118,7 +118,15 @@ def estimate_plan(
     if max_parallel < 1:
         max_parallel = 1
 
-    expected = sum(_wave_cost(len(w), EXPECTED_WORKER_S, max_parallel) for w in waves)
+    # A worker cannot run longer than its own deadline, so the expected figure
+    # is capped by it. Without the cap, a short worker_timeout produces the
+    # nonsense observed on 2026-09-20 with a 30s budget: "~70s expected, ~40s
+    # worst case" -- an expectation exceeding the ceiling that makes it
+    # impossible. EXPECTED_WORKER_S is a benchmark median and knows nothing
+    # about the budget it is being spent under.
+    per_worker_expected = min(EXPECTED_WORKER_S, worker_timeout_s)
+
+    expected = sum(_wave_cost(len(w), per_worker_expected, max_parallel) for w in waves)
     worst = sum(_wave_cost(len(w), worker_timeout_s, max_parallel) for w in waves)
 
     return Estimate(

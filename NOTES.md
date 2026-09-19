@@ -347,6 +347,18 @@ only — scoped the same way the D2 fix was, so a worker whose answer discusses
 
 *Lesson kept: a success field is a claim, not evidence. Check the work.*
 
+**Confirmed in production, 2026-09-20.** A real worker on a 30s budget returned:
+
+```json
+{"status":"SUCCESS","response":"","duration_seconds":29.03,
+ "usage":{"input_tokens":164283,"output_tokens":2326,"cache_read_tokens":460430}}
+```
+
+with `[agy] print timeout after 30s with turn in progress` on stderr. Real
+usage, real duration, `SUCCESS`, and no answer. The stderr rule caught it and
+recorded `timeout -- agy hit its own --print-timeout mid-turn`. Reading the
+status field would have filed an empty string as a completed 2000-word audit.
+
 ## 19. `--dangerously-skip-permissions` is required for workers, and my earlier
 reading of it was wrong
 
@@ -496,3 +508,28 @@ nothing in the system could tell me whether the setting had been read. Config
 that cannot be observed after the fact is config you are guessing about — which
 is the same complaint this project makes about the client, arrived at from the
 other side.*
+
+## 24. An estimate above its own ceiling
+
+The same run printed:
+
+```
+estimate : ~70s expected, ~40s worst case
+```
+
+Expected exceeding worst case is impossible by construction — the worst case is
+the worker's own deadline, and nothing can run longer than it. The cause was
+that `expected` came from `EXPECTED_WORKER_S`, a benchmark median, which knows
+nothing about the budget it is being spent under. With the usual 600s budget the
+two numbers look sensible and the bug is invisible; it only surfaced because the
+budget was dropped to 30s for an unrelated test.
+
+`expected` is now `min(EXPECTED_WORKER_S, worker_timeout_s)` per worker.
+
+Not cosmetic: the pair exists so a human can judge whether a plan fits the
+client deadline. One of the two being arithmetically impossible discredits both,
+and it is the sort of thing a reader notices immediately and a test suite never
+does.
+
+*Lesson kept: found by reading output during a test aimed at something else.
+Every number the tool prints is a claim, including the ones nobody asked about.*

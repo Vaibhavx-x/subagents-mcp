@@ -64,6 +64,11 @@ A worker is never trusted to report its own success: agy exits 0 with
 auto-denied, in each case having done nothing. A worker that produced no answer
 is recorded as a failure, with the reason.
 
+That is not theoretical. A real worker cut off at a 30-second budget returned
+`{"status":"SUCCESS","response":"","usage":{"input_tokens":164283,…}}` — real
+usage, real duration, no answer. It is recorded as `timeout — agy hit its own
+--print-timeout mid-turn`, its partial output kept, and `collect` returns it.
+
 ```
 PLAN b42ddb6e9ebb
   workspace_root : D:\Projects\subagents-mcp
@@ -76,7 +81,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 221 tests, no API calls
+python -m pytest                    # 227 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens

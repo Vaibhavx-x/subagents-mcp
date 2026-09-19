@@ -163,3 +163,31 @@ def test_deadline_note_names_the_entry_when_unset():
 
 def test_deadline_note_admits_when_it_could_not_read():
     assert "could not read" in est(1, client_timeout=UNREADABLE).deadline_note
+
+
+def test_expected_never_exceeds_the_worst_case():
+    """Observed live: a 30s worker budget printed "~70s expected, ~40s worst
+    case". EXPECTED_WORKER_S is a benchmark median and knows nothing about the
+    budget it is being spent under, so it has to be capped by it.
+
+    An expectation above the ceiling is not a cosmetic error -- the two numbers
+    exist so a human can judge whether the plan fits the client deadline, and
+    one of them being impossible undermines both.
+    """
+    from conftest import make_task
+
+    from subagents.estimate import estimate_plan
+
+    e = estimate_plan([[make_task("a")]], max_parallel=4, worker_timeout_s=30)
+    assert e.expected_s <= e.worst_case_s
+    assert e.worst_case_s == 30 + SPAWN_OVERHEAD_S
+
+
+def test_a_generous_budget_still_uses_the_benchmark_median():
+    """The cap must not drag the estimate down when the budget is realistic."""
+    from conftest import make_task
+
+    from subagents.estimate import estimate_plan
+
+    e = estimate_plan([[make_task("a")]], max_parallel=4, worker_timeout_s=600)
+    assert e.expected_s == EXPECTED_WORKER_S + SPAWN_OVERHEAD_S
