@@ -20,6 +20,7 @@ Training data is saturated with v1. Every one of these is wrong here:
 | `get_context()` | declare a `ctx: Context` parameter |
 | `ctx.fastmcp` | `ctx.mcp_server` |
 | `ctx.elicit(...)` | not used — see §3 |
+| `ctx.info/warning/error/debug/log` | **deprecated** (SEP-2577, protocol 2026-07-28) — use the file logger. `ctx.report_progress` is NOT deprecated |
 | `ctx.session.create_message(...)` | not used (sampling deprecated) |
 | `McpError(ErrorData(...))` | `MCPError(code, message)` |
 | `FastMCPError` | `MCPServerError` |
@@ -95,15 +96,57 @@ by post-run hashing — whether what changed matches what was declared.
 
 ## 6. Async and subprocess invariants
 
+All of these were measured in Phase 2. Each one has a regression test, and each
+describes a bug that the obvious implementation has.
+
 - No blocking call inside an `async def` handler. (v2 runs sync `def` handlers
   on a worker thread, so this applies to the orchestrator specifically.)
-- Read stdout and stderr **concurrently**. Sequential reads deadlock when a
-  child fills the unread pipe — which only shows up under load, i.e. the demo.
+- **Never `asyncio.wait_for(proc.communicate(), t)`.** On timeout it DISCARDS
+  partial output — a child that flushed real work before hanging yields `b''`.
+  Drain both streams with reader tasks that own their buffers.
+- **Never `proc.wait()` to detect exit.** It completes on **pipe EOF, not
+  process exit**, and a grandchild inherits the pipes — so a worker that starts
+  any background process blocks until the timeout and is recorded as a timeout
+  despite having succeeded. Poll process liveness (`subagents/worker.py`).
+- **Kill the process TREE, not the process.** `proc.kill()` leaves
+  grandchildren running on Windows (measured). Use `subagents/jobobject.py`; a
+  failed attach must raise, never degrade silently.
 - Write each worker's result to SQLite **as it lands**, never at the end.
   Writing at the end silently defeats `collect`, and only shows up on an overrun.
 - Wrap per-worker result writes in `asyncio.shield`.
-- Kill the **process group**, not just the parent. Cancellation propagates
-  cleanly (measured); a hard kill is a different, still-untested path.
+
+## 6b. Never trust a worker's self-report
+
+`agy` exits **0** with `"status": "SUCCESS"` and real token usage in at least
+two cases where it did nothing:
+
+- its own `--print-timeout` fires mid-turn (banner on **stderr**);
+- a tool was auto-denied in headless mode (`denied_actions` in the JSON).
+
+Both leave `response` empty. **A worker that produced no answer did not
+succeed.** Classify on the status field plus evidence of work — never by
+grepping the transcript, which is bench defect D2.
+
+Workers are spawned with `--dangerously-skip-permissions`: headless mode
+auto-**denies** the `command` tool without it, so a worker asked to run tests is
+silently blocked. A worker has no human to prompt; a denial there is a failure
+mode, not a safeguard.
+
+## 6c. There is no filesystem containment — do not re-add the claim
+
+Measured with a canary file outside the workspace: `--add-dir` and `--sandbox`
+both allow reads *and* writes outside it, with or without
+`--dangerously-skip-permissions`. `--add-dir` is additive scope; `--sandbox`
+restricts terminal commands only.
+
+The docs used to say these "constrain it, but that is agy's enforcement, not
+ours". That was wrong and is corrected. **Do not restore it.** What is true:
+the human approval at `execute_plan` is the only gate, and post-run hashing the
+only detection — for paths we hash.
+
+`scope_summary` is `execute_plan`'s **first parameter** because the approval
+prompt truncates arguments in schema order. That ordering is a safety property
+and is pinned by a test; do not reorder it for tidiness.
 
 ## 7. SQLite
 
