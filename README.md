@@ -107,7 +107,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 294 tests, no API calls
+python -m pytest                    # 297 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
@@ -239,6 +239,14 @@ Attribution is stated rather than implied. Write sets are provably disjoint, so
 a declared path is attributable to one task; an **undeclared** change with
 several workers running at once is attributable only to the wave, and the
 report says "in this wave" rather than naming a worker it cannot identify.
+
+It also cannot tell *which process* wrote a file — only that it changed. An
+editor autosaving, a watcher rebuilding, or a second MCP server appending to
+its log inside the workspace all look exactly like a worker, and the first real
+fan-out proved it by flagging another server's log against every task
+(`NOTES.md` §28). Logs and scratch files are excluded by default;
+`SUBAGENTS_TAINT_IGNORE` takes extra globs for whatever your project
+generates.
 
 **What it does not: there is no filesystem containment.** Measured against real
 `agy` with a canary file outside the workspace:

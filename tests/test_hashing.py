@@ -228,3 +228,55 @@ def test_declared_paths_are_excluded_from_the_manifest(workspace):
     shot = snap(workspace, task)
     assert norm(workspace / "pkg" / "config.py") not in shot.manifest
     assert norm(workspace / "README.md") not in shot.manifest
+
+
+# ------------------------------------------- churn from processes that are not ours
+def test_another_processs_log_does_not_taint_the_run(workspace):
+    """Measured 2026-09-20, and it made every task in a real plan dirty.
+
+    A SECOND MCP server registered in the same client (probe/probe_server.py)
+    appended to probe/probe.log inside the workspace while a fan-out ran. All
+    three workers came back tainted for a file none of them touched. We cannot
+    tell which process wrote a file -- only that it changed -- so logs are
+    excluded by pattern.
+    """
+    task = make_task("a", reads=(str(workspace / "README.md"),),
+                     writes=(str(workspace / "out.txt"),))
+    (workspace / "probe").mkdir()
+    (workspace / "probe" / "probe.log").write_text("line 1\n", encoding="utf-8")
+
+    before = snap(workspace, task)
+    (workspace / "out.txt").write_text("done\n", encoding="utf-8")
+    (workspace / "probe" / "probe.log").write_text("line 1\nline 2\n", encoding="utf-8")
+    after = snap(workspace, task)
+
+    assert not compare(before, after, task).tainted
+
+
+def test_extra_ignore_globs_come_from_config(workspace, cfg):
+    """An escape hatch, because the default list cannot know about your build."""
+    from dataclasses import replace
+
+    local = replace(cfg, taint_ignore=("*.generated.ts",))
+    ignore = IgnoreSpec.for_config(local)
+    task = make_task("a", reads=(str(workspace / "README.md"),), writes=())
+
+    before = snap(workspace, task, ignore=ignore)
+    (workspace / "api.generated.ts").write_text("export {};\n", encoding="utf-8")
+    after = snap(workspace, task, ignore=ignore)
+
+    assert not compare(before, after, task).tainted
+
+
+def test_a_real_source_file_is_still_caught_with_globs_active(workspace, cfg):
+    """The ignore list must not become a hole big enough to hide a write in."""
+    ignore = IgnoreSpec.for_config(cfg)
+    task = make_task("a", reads=(str(workspace / "README.md"),), writes=())
+
+    before = snap(workspace, task, ignore=ignore)
+    (workspace / "pkg" / "injected.py").write_text("print('hi')\n", encoding="utf-8")
+    after = snap(workspace, task, ignore=ignore)
+
+    report = compare(before, after, task)
+    assert report.tainted
+    assert any("injected.py" in p for p in report.undeclared)

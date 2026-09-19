@@ -42,7 +42,7 @@ KNOWN_KEYS = frozenset({
     "SUBAGENTS_DB_PATH", "SUBAGENTS_MODEL", "SUBAGENTS_MODEL_ESCALATE",
     "SUBAGENTS_WORKER_TIMEOUT_S", "SUBAGENTS_MAX_PARALLEL",
     "SUBAGENTS_PLAN_TTL_S", "SUBAGENTS_LOG_FILE", "SUBAGENTS_LOG_LEVEL",
-    "SUBAGENTS_DEPTH",
+    "SUBAGENTS_TAINT_IGNORE", "SUBAGENTS_DEPTH",
 })
 
 
@@ -98,6 +98,7 @@ class Config:
     log_file: Path
     log_level: str
     agy_path: str
+    taint_ignore: tuple[str, ...] = ()
     _dotenv: dict[str, str] = field(default_factory=dict, repr=False, compare=False)
 
 
@@ -133,5 +134,8 @@ def load_config(env_file: Path | None = None) -> Config:
         log_file=log_file,
         log_level=_get("SUBAGENTS_LOG_LEVEL", "INFO", dotenv),
         agy_path=_get("SUBAGENTS_AGY_PATH", "agy", dotenv),
+        taint_ignore=tuple(
+            p.strip() for p in _get("SUBAGENTS_TAINT_IGNORE", "", dotenv).split(";") if p.strip()
+        ),
         _dotenv=dotenv,
     )

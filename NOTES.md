@@ -589,3 +589,54 @@ not declare. A parent acting on the old text would re-propose the wrong task.
 *Lesson kept: documentation written ahead of the code is a forecast, and a
 forecast that is never reconciled becomes a lie told confidently to the one
 reader who cannot check it.*
+
+## 28. A different MCP server's log tainted every task in the plan
+
+The first real multi-wave fan-out through the client worked: three workers, two
+waves, the undeclared write caught exactly as designed. It also reported
+something nobody wrote:
+
+```
+[seed-a] TAINTED: 1 undeclared path(s)
+    d:\projects\subagents-mcp\probe\probe.log
+[seed-b] TAINTED: 1 undeclared path(s)
+    d:\projects\subagents-mcp\probe\probe.log
+[merge]  TAINTED: 2 undeclared path(s)
+    d:\projects\subagents-mcp\probe\probe.log
+    d:\projects\subagents-mcp\scratch\notes.txt
+```
+
+`probe/probe.log` is written by **`probe/probe_server.py`** -- a second MCP
+server registered in the same client, which agy keeps running and which appends
+to its log inside the same workspace root. Every task in the plan was marked
+dirty for a file no worker touched.
+
+The ignore list covered our own database and log. It did not cover the general
+case, which is the one that matters: **we cannot tell which process changed a
+file, only that it changed.** An editor autosaving, a watcher rebuilding, a
+second MCP server logging -- all of it looks exactly like a worker.
+
+`DEFAULT_IGNORE_GLOBS` now excludes `*.log`, `*.tmp`, `*.swp`, `*.pyc` and
+`*~`, and `SUBAGENTS_TAINT_IGNORE` takes extra globs for whatever a given
+project generates. A test pins that a real source file is still caught, because
+an ignore list is a hole and the hole must stay smaller than the thing it is
+hiding.
+
+*Lesson kept: I wrote in CLAUDE.md that "a detector that always fires is one
+nobody reads", implemented the exclusion for the churn I could think of, and
+shipped. The first real run found churn I had not thought of, from a process I
+had forgotten was running. The rule was right and my list was short.*
+
+## 29. Two numbers from the same run, both worth keeping
+
+**Attribution held up live.** Wave 0 ran two workers and reported "1 undeclared
+path(s) changed **in this wave**"; wave 1 ran one worker and reported "2
+undeclared path(s) changed **by this task**". The wording tracked the actual
+number of possible authors without anyone tuning it for the demo.
+
+**The estimate was 4x high.** The plan predicted ~140s expected; the run took
+**34.6s** (wave 0: 14.1s for two workers in parallel, wave 1: 19.4s). It also
+warned that the worst case (~1220s) exceeded the 900s client deadline, which
+was true and unhelpful -- worst case assumes every worker burns its full
+600s budget. Both numbers are honest and the expected one is badly calibrated,
+which is the standing argument for p90 over a benchmark median.

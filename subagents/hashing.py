@@ -20,6 +20,12 @@ the failure this module exists to prevent.
 
 What it cannot see: anything outside the workspace root. That is stated in the
 README and must not be quietly upgraded into a containment claim.
+
+What it cannot tell: **which process** changed a file. Anything writing inside
+the root during a run looks exactly like a worker -- an editor saving, a watcher
+rebuilding, another MCP server appending to its log. `DEFAULT_IGNORE_GLOBS`
+covers the common cases; the rest is the reader's judgement, which is why the
+report names paths instead of just counting them.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ import hashlib
 import logging
 import os
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from pathlib import Path
 
 from .models import Task
@@ -40,6 +47,15 @@ IGNORED_DIRS = frozenset({
     ".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache",
     ".mypy_cache", ".ruff_cache", ".tox", ".idea", ".vscode",
 })
+
+# Patterns whose changes are never a worker's deliverable. Logs are the case
+# that matters: measured 2026-09-20, a SECOND MCP server registered in the same
+# client (`probe/probe_server.py`) appended to `probe/probe.log` inside the
+# workspace while a fan-out was running, and every task in the plan came back
+# tainted for a file no worker touched. We cannot tell which process wrote a
+# file -- only that it changed -- so patterns like this are the only defence
+# against a detector that fires on every run and is therefore ignored.
+DEFAULT_IGNORE_GLOBS = ("*.log", "*.log.*", "*.tmp", "*.swp", "*.pyc", "*~")
 
 _READ_CHUNK = 1 << 20
 
@@ -55,6 +71,7 @@ class IgnoreSpec:
 
     files: frozenset[str] = frozenset()
     dirs: frozenset[str] = IGNORED_DIRS
+    globs: tuple[str, ...] = DEFAULT_IGNORE_GLOBS
 
     @classmethod
     def for_config(cls, config) -> "IgnoreSpec":
@@ -64,10 +81,18 @@ class IgnoreSpec:
             # SQLite in WAL mode keeps two sidecars beside the database, and
             # both change on every write.
             own.update({base, base + "-wal", base + "-shm", base + "-journal"})
-        return cls(files=frozenset(os.path.normcase(p) for p in own))
+        extra = tuple(getattr(config, "taint_ignore", ()) or ())
+        return cls(
+            files=frozenset(os.path.normcase(p) for p in own),
+            globs=DEFAULT_IGNORE_GLOBS + extra,
+        )
 
     def skips_file(self, norm_path: str) -> bool:
-        return norm_path in self.files
+        if norm_path in self.files:
+            return True
+        name = os.path.basename(norm_path)
+        return any(fnmatch(name, pattern) or fnmatch(norm_path, pattern)
+                   for pattern in self.globs)
 
     def skips_dir(self, name: str) -> bool:
         return name in self.dirs
