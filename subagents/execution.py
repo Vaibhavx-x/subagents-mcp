@@ -68,23 +68,28 @@ def validate_scope_summary(text: object, plan_id: str) -> str:
     audit trail. It is validated only for shape, because it is the first thing
     the human reads -- and, given the prompt truncates arguments, often the
     only thing.
+
+    Called `affects` on the wire: the client sorts schema properties
+    alphabetically before the model sees them, so the name has to sort ahead of
+    `plan_digest`/`plan_id` to reach the prompt at all (NOTES.md section 20).
+    Error messages use the wire name, since that is what the parent passes.
     """
     if not isinstance(text, str):
-        raise PlanRefused("scope_summary is required", "expected a short description")
+        raise PlanRefused("`affects` is required", "expected a short description")
     cleaned = " ".join(text.split())
     if len(cleaned) < SCOPE_SUMMARY_MIN:
         raise PlanRefused(
-            "scope_summary is too short to be informative",
+            "`affects` is too short to be informative",
             f"got {len(cleaned)} chars; describe what will be touched, e.g. "
             f'"edits pkg/config.py and pkg/server.py; no deletes"',
         )
     if len(cleaned) > SCOPE_SUMMARY_MAX:
         raise PlanRefused(
-            "scope_summary is too long",
+            "`affects` is too long",
             f"{len(cleaned)} chars; the approval prompt truncates, so lead with the paths",
         )
     if cleaned == plan_id:
-        raise PlanRefused("scope_summary must describe the work, not repeat the plan id")
+        raise PlanRefused("`affects` must describe the work, not repeat the plan id")
     return cleaned
 
 

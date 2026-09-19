@@ -74,12 +74,23 @@ def test_all_three_tools_are_published():
     assert {"propose_plan", "execute_plan", "collect"} <= {t.name for t in tools}
 
 
-def test_scope_summary_is_the_first_parameter_of_execute_plan():
-    """The approval prompt truncates arguments in schema order.
+def test_the_human_readable_argument_survives_prompt_truncation():
+    """The approval prompt truncates arguments, and NOT in declaration order.
 
-    With plan_id first, the human would see `{"plan_id":"b42ddb6e..."` -- an
-    opaque id -- and the one readable argument would be cut off entirely. This
-    ordering is a safety property, not cosmetics, so it is pinned.
+    An earlier version of this test asserted `scope_summary` was the first
+    property in our schema. That was true and useless: measured against real
+    agy on 2026-09-19, the client rewrites its cached copy of the schema with
+    `properties` sorted ALPHABETICALLY (`required` keeps our order), and the
+    model emits arguments in that sorted order. The prompt therefore opened
+
+        subagents/execute_plan({"plan_digest":"30bccf8b20d6f83a...
+
+    spending the whole preview on a hash -- strictly worse than the opaque id
+    the original ordering was chosen to avoid.
+
+    So what is pinned is the property that actually reaches the human: the
+    argument that sorts FIRST must be the readable one. Declaration order is
+    kept too, in case a client ever honours it.
     """
     async def main():
         async with Client(server.mcp) as client:
@@ -88,8 +99,30 @@ def test_scope_summary_is_the_first_parameter_of_execute_plan():
     listed = anyio.run(main)
     tools = listed.tools if hasattr(listed, "tools") else listed
     schema = {t.name: t for t in tools}["execute_plan"].input_schema
-    assert list(schema["properties"])[0] == "scope_summary"
-    assert set(schema["required"]) == {"scope_summary", "plan_id", "plan_digest"}
+    names = list(schema["properties"])
+
+    assert sorted(names)[0] == "affects", (
+        f"alphabetically first argument is {sorted(names)[0]!r}; the human would "
+        "see that one, not the description of the work"
+    )
+    assert names[0] == "affects"
+    assert set(schema["required"]) == {"affects", "plan_id", "plan_digest"}
+
+
+def test_the_visible_argument_name_is_short():
+    """Every character of the key eats the ~40-char preview budget.
+
+    `{"affects":"writes scratch/note_a...` leaves room for paths;
+    `{"scope_summary":"writes scr...` spends a third of the budget on the key.
+    """
+    async def main():
+        async with Client(server.mcp) as client:
+            return await client.list_tools()
+
+    listed = anyio.run(main)
+    tools = listed.tools if hasattr(listed, "tools") else listed
+    schema = {t.name: t for t in tools}["execute_plan"].input_schema
+    assert len(sorted(schema["properties"])[0]) <= 10
 
 
 def test_ctx_is_not_exposed_as_a_tool_argument():
@@ -107,7 +140,7 @@ def test_ctx_is_not_exposed_as_a_tool_argument():
 def test_execute_then_collect(cfg, workspace, fake_worker):
     plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"]))
     result = call("execute_plan", {
-        "scope_summary": GOOD_SCOPE,
+        "affects": GOOD_SCOPE,
         "plan_id": plan.plan_id,
         "plan_digest": plan.plan_digest,
     })
@@ -125,7 +158,7 @@ def test_execution_output_is_a_summary_not_a_transcript(cfg, workspace, fake_wor
     """The project's entire claim is that the parent carries summaries."""
     plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"]))
     body = text_of(call("execute_plan", {
-        "scope_summary": GOOD_SCOPE, "plan_id": plan.plan_id,
+        "affects": GOOD_SCOPE, "plan_id": plan.plan_id,
         "plan_digest": plan.plan_digest,
     }))
     assert "collect(plan_id)" in body
@@ -135,7 +168,7 @@ def test_execution_output_is_a_summary_not_a_transcript(cfg, workspace, fake_wor
 def test_bad_digest_is_refused(cfg, workspace, fake_worker):
     plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"]))
     result = call("execute_plan", {
-        "scope_summary": GOOD_SCOPE,
+        "affects": GOOD_SCOPE,
         "plan_id": plan.plan_id,
         "plan_digest": "0" * 64,
     })
@@ -147,18 +180,18 @@ def test_bad_digest_is_refused(cfg, workspace, fake_worker):
 def test_weak_scope_summary_is_refused(cfg, workspace, fake_worker):
     plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"]))
     result = call("execute_plan", {
-        "scope_summary": "stuff",
+        "affects": "stuff",
         "plan_id": plan.plan_id,
         "plan_digest": plan.plan_digest,
     })
     assert result.is_error is True
-    assert "scope_summary" in text_of(result)
+    assert "affects" in text_of(result)
     assert fake_worker == []
 
 
 def test_unknown_plan_is_a_clean_error(cfg, fake_worker):
     result = call("execute_plan", {
-        "scope_summary": GOOD_SCOPE, "plan_id": "nope", "plan_digest": "0" * 64,
+        "affects": GOOD_SCOPE, "plan_id": "nope", "plan_digest": "0" * 64,
     })
     assert result.is_error is True
     assert "Traceback" not in text_of(result)
@@ -185,7 +218,7 @@ def test_a_worker_session_cannot_fan_out(cfg, workspace, fake_worker, monkeypatc
     plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"]))
 
     result = call("execute_plan", {
-        "scope_summary": GOOD_SCOPE,
+        "affects": GOOD_SCOPE,
         "plan_id": plan.plan_id,
         "plan_digest": plan.plan_digest,
     })

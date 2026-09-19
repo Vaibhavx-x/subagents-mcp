@@ -285,6 +285,8 @@ subagents/execute_plan({"scope_summary": "edits pkg/config.py and pkg/serve...)
 
 A test pins the order, because it looks cosmetic and is not.
 
+**Superseded in part by entry 20.** The truncation is real; the claim that it follows *schema order* was not. It follows alphabetical order, and the reordering above bought nothing.
+
 Also worth knowing: the prompt offers "always allow … (Persist to
 settings.json)". A user who picks it permanently removes the only human gate in
 the system.
@@ -362,3 +364,68 @@ human gate is the parent's `execute_plan` prompt, which is unaffected.
 
 *Lesson kept: "I tested the flag" meant "I tested one tool class". The
 generalisation was mine, not the measurement's.*
+
+## 20. The prompt truncates in ALPHABETICAL order, not schema order
+
+Entry 16 moved `scope_summary` to be `execute_plan`'s first parameter so the
+human would read intent rather than an id, and pinned it with a test. The first
+interactive `execute_plan` call showed what that actually bought:
+
+```
+subagents/execute_plan({"plan_digest":"30bccf8b20d6f83a9f5d80627072...
+```
+
+The entire ~40-character preview, spent on a hash. **Worse than the opaque id
+the reorder was meant to avoid.**
+
+The cause is visible in the client's own cache of our schema,
+`~/.gemini/antigravity-cli/mcp/subagents/execute_plan.json`:
+
+```json
+"parameters":{"properties":{"plan_digest":{...},"plan_id":{...},"scope_summary":{...}},
+"required":["scope_summary","plan_id","plan_digest"]}
+```
+
+`properties` is rewritten **sorted alphabetically**; `required` keeps our
+declared order. The model emits its arguments in `properties` order, so
+alphabetical is what reaches the prompt. Our own schema was correct the whole
+time — `list(schema["properties"])[0] == "scope_summary"` passed, and measured
+nothing that mattered.
+
+The fix is the only lever left: a name that sorts ahead of `plan_*`. The
+parameter is now **`affects`**, which also frees preview budget — every
+character of the key is a character of scope the human does not read:
+
+```
+{"affects":"writes scratch/note_a.txt and s...     <- 28 chars of content
+{"scope_summary":"writes scratch/no...             <- 22, if it sorted first
+{"plan_digest":"30bccf8b20d6f83a9f5...             <- 0
+```
+
+Internally it is still `scope_summary` (variable, DB column, validator); only
+the wire name is short. The test now pins the property that is true of the
+*client*: the argument that sorts first must be the readable one. Declared
+order is kept as well, in case a client ever honours it.
+
+*Lesson kept: I pinned the half of the mechanism I could see from inside the
+server. A test that passes in-process can still be measuring the wrong end of
+the wire — the check had to run against the client's copy, not ours.*
+
+## 21. The client keeps the server process alive across sessions
+
+The first `execute_plan` attempt failed with `Unknown tool: execute_plan`, from
+our own log, while `list_tools` in-process returned all three. The serving
+process (PID 4956) had started at 10:20 that morning — before `execute_plan`
+existed — and had outlived every chat session since.
+
+The two caches are independent: `~/.gemini/antigravity-cli/mcp/subagents/*.json`
+had been refreshed and *did* contain `execute_plan.json`, so the agent read a
+schema for a tool the live process could not serve. Ending a chat does not
+restart the server.
+
+So: after changing tool registration, kill the server process or restart the
+client. Otherwise the symptom is a tool that demonstrably exists, is documented
+in the client's own cache, and returns "unknown" — which cost the parent agent
+a long detour into reading `server.py`, `config.py` and 800 lines of log to
+diagnose. Exactly the context burn this project exists to avoid, triggered by a
+stale process.

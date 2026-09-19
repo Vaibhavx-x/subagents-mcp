@@ -263,7 +263,7 @@ def render(plan: ProposedPlan) -> str:
     add("NEXT")
     add(
         f"  execute_plan(plan_id={plan.plan_id!r}, plan_digest={plan.plan_digest!r}, "
-        "scope_summary=<describe what will be touched>)"
+        "affects=<describe what will be touched>)"
     )
     add("  If that call is cancelled, call collect(plan_id) -- do not retry.")
     return "\n".join(lines)

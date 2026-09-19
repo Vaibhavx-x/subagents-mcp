@@ -45,14 +45,16 @@ plans where two tasks write the same file or whose read/write dependencies
 form a cycle, groups the rest into waves — writers before readers — and
 checks wall-clock against the deadline read from your client config.
 
-**`execute_plan(scope_summary, plan_id, plan_digest)`** — recomputes the digest
+**`execute_plan(affects, plan_id, plan_digest)`** — recomputes the digest
 from the stored plan and refuses a stale, swapped or expired one **before
 anything spawns**, then runs the workers in wave order. Each worker is killed
 as a process **tree** at its deadline (a plain kill leaves grandchildren
 running on Windows), and its result is written the moment it finishes.
 
-`scope_summary` is first because the approval prompt truncates arguments — it
-is the part the human actually sees.
+`affects` carries the human-readable scope. It is named for the approval
+prompt rather than for the code: the prompt truncates arguments after ~40
+characters and shows them **alphabetically**, so the name has to sort ahead of
+`plan_digest` and `plan_id` to be seen at all.
 
 **`collect(plan_id)`** — reads results back, including after a cancellation.
 Returns summaries and token usage, never full transcripts.
@@ -176,7 +178,7 @@ every MCP tool call.** Running *your* session with
 It is not elicitation. `agy` advertises elicitation support, drives the round
 trip correctly, and then auto-cancels every request in 6–16 ms without rendering
 anything — see `NOTES.md` §2. That is why there are three tools rather than one,
-and why `execute_plan` takes a human-readable `scope_summary`: so the permission
+and why `execute_plan` takes a human-readable `affects` argument: so the permission
 prompt shows intent rather than an opaque id.
 
 **What the code enforces:** which tasks are allowed into a plan, what each worker
@@ -206,10 +208,21 @@ So the real control points are: **which tasks enter a plan**, **the human
 approval at `execute_plan`** — the only gate in the system — and **post-run
 hashing**, which detects changes only to paths we thought to hash.
 
-> **The approval prompt truncates arguments**, which is why `scope_summary` is
-> `execute_plan`'s first parameter: it is the part the human actually sees.
+> **The approval prompt truncates arguments after ~40 characters, in
+> alphabetical order** — not the order they are declared in. The client caches
+> our schema with `properties` sorted, and the model emits arguments in that
+> order, so with a parameter named `scope_summary` the prompt opened
+> `{"plan_digest":"30bccf8b20d6f83a...` and the human approved a hash. The
+> argument is therefore named `affects`: short, and it sorts first. See
+> `NOTES.md` §20.
+>
 > Note also that the prompt offers "always allow … (Persist to settings.json)".
 > Choosing that permanently removes the only human gate.
+>
+> **After changing tool registration, restart the client.** It keeps the server
+> process alive across chat sessions while refreshing its tool-schema cache
+> separately, so a newly added tool can be visible in the cache and still
+> return `Unknown tool` from the running process (`NOTES.md` §21).
 
 ## Layout
 

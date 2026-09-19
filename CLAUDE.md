@@ -144,9 +144,29 @@ ours". That was wrong and is corrected. **Do not restore it.** What is true:
 the human approval at `execute_plan` is the only gate, and post-run hashing the
 only detection — for paths we hash.
 
-`scope_summary` is `execute_plan`'s **first parameter** because the approval
-prompt truncates arguments in schema order. That ordering is a safety property
-and is pinned by a test; do not reorder it for tidiness.
+The approval prompt truncates arguments to ~40 characters, and it does **not**
+truncate in schema order — the client rewrites its cached copy of our schema
+with `properties` sorted **alphabetically**, and the model emits arguments in
+that order. Declaration order never reaches the human.
+
+So `execute_plan`'s human-readable argument is named **`affects`**: it must
+sort ahead of `plan_digest`/`plan_id`, and it must be short, because every
+character of the key is a character of scope the human does not read. Do not
+rename it to something tidier and longer; two tests pin both properties.
+Internally it is still `scope_summary` (variable, DB column, validator) — only
+the wire name is short. Measured 2026-09-19; see `NOTES.md` §20.
+
+## 6d. Restart the client after changing tool registration
+
+`agy` keeps the server **process** alive across chat sessions and refreshes its
+tool-schema cache (`~/.gemini/antigravity-cli/mcp/subagents/*.json`)
+independently. A newly registered tool can therefore be present in the cache,
+readable by the agent, and still answer `Unknown tool` from the process that is
+actually serving. Measured 2026-09-19: a process from 10:20 served three
+sessions that day, one of them after `execute_plan` was added.
+
+Symptom to recognise before debugging anything else: `list_tools` in-process
+returns the tool, the client says it does not exist. Kill the server process.
 
 ## 7. SQLite
 

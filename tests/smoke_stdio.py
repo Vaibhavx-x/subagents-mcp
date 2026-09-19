@@ -80,7 +80,7 @@ async def run(server_path: Path) -> int:
         refused = await client.call_tool(
             "execute_plan",
             {
-                "scope_summary": "smoke test: should never execute anything at all",
+                "affects": "smoke test: should never execute anything at all",
                 "plan_id": "nosuchplan",
                 "plan_digest": "0" * 64,
             },

@@ -110,7 +110,7 @@ async def propose_plan(tasks_json: str, workspace_root: str, ctx: Context) -> st
 
 @mcp.tool()
 async def execute_plan(
-    scope_summary: str,
+    affects: str,          # named for the approval prompt, not for us -- see below
     plan_id: str,
     plan_digest: str,
     ctx: Context,
@@ -122,9 +122,9 @@ async def execute_plan(
     rather than run under an approval granted for something else.
 
     Args:
-        scope_summary: Short, human-readable description of what will be
-            touched, e.g. "edits pkg/config.py and pkg/server.py; no deletes".
-            This is shown to the human in the approval prompt, which TRUNCATES
+        affects: Short, human-readable description of what will be touched,
+            e.g. "edits pkg/config.py and pkg/server.py; no deletes". This is
+            the text the human sees in the approval prompt, which TRUNCATES
             arguments -- so lead with the paths and the action. It is recorded
             verbatim and is not checked against the plan.
         plan_id: From propose_plan.
@@ -135,6 +135,16 @@ async def execute_plan(
         database behind the handle; call collect(plan_id) to read them back,
         including after a timeout.
     """
+    # The parameter is `affects` on the wire and scope_summary everywhere
+    # inside. Measured, 2026-09-19: the client writes its cached copy of our
+    # schema with `properties` sorted ALPHABETICALLY, and the model emits
+    # arguments in that order -- so declaration order does not reach the human,
+    # the first key alphabetically does. With `scope_summary` the prompt led
+    # with `{"plan_digest":"30bccf8b20d6f83a...`, spending the entire ~40-char
+    # preview on a hash. A short name sorting before `plan_*` is the only lever
+    # we have, and every character of the key is a character of scope the human
+    # does not get to read. See NOTES.md section 20.
+    scope_summary = affects
     log.info("execute_plan [%s]: plan=%s scope=%r", ctx.request_id, plan_id, scope_summary[:80])
 
     if WORKER_DEPTH:

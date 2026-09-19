@@ -28,14 +28,14 @@ for one small edit costs about 10s of process startup and saves nothing.
 1. `propose_plan(tasks_json, workspace_root)` -- validates and returns a
    readable plan, a `plan_id` and a `plan_digest`. Cheap, read-only, spawns
    nothing. Relay the plan text to the human.
-2. `execute_plan(scope_summary, plan_id, plan_digest)` -- the human approves
+2. `execute_plan(affects, plan_id, plan_digest)` -- the human approves
    via the tool-permission prompt.
 3. `collect(plan_id)` -- reads results back.
 
 Never call `execute_plan` without a `propose_plan` first: the digest is checked
 against the stored plan and a mismatch is refused.
 
-## Writing scope_summary
+## Writing `affects`
 
 This is the only thing a human reads before approving, and **the prompt
 truncates arguments after roughly 40 characters.** Lead with the paths and the
