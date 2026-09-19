@@ -10,11 +10,9 @@ parent calls `execute_plan`. Workers run as separate processes, each writing its
 full output to SQLite the moment it finishes and returning only a short summary
 and a handle. `collect` reads results back, **including after a timeout**.
 
-> **Status: Phase 1 complete.** `propose_plan` works end to end against the
-> real client. `execute_plan` and `collect` are **not built yet** -- no
-> subprocess is ever spawned at present, so nothing here runs a worker.
-> Anything below describing worker execution is design, not a claim about
-> running code.
+> **Status: Phase 2 complete.** All three tools work end to end against the
+> real client and a real worker. Workers run **one at a time** -- parallelism
+> within a wave, taint hashing and the escalation ladder are Phase 3.
 
 ---
 
@@ -34,15 +32,35 @@ delegates them carries five summaries.
 
 ## What works today
 
-`propose_plan(tasks_json, workspace_root)` -- validates a set of sub-tasks and
-returns an executable plan. Read-only; spawns nothing.
+All three tools, end to end against a real worker. Workers run **one at a
+time**; parallelism within a wave is Phase 3.
+
+**`propose_plan(tasks_json, workspace_root)`** — validates a set of sub-tasks
+and returns an executable plan. Read-only; spawns nothing.
 
 It resolves every declared path and proves it lands inside the workspace
 (after symlink resolution, and against the workspace root rather than the
 process CWD), classifies each task's action tier from a rules table, refuses
 plans where two tasks write the same file or whose read/write dependencies
-form a cycle, groups the rest into waves -- writers before readers -- and
-estimates wall-clock against the 180s deadline.
+form a cycle, groups the rest into waves — writers before readers — and
+checks wall-clock against the deadline read from your client config.
+
+**`execute_plan(scope_summary, plan_id, plan_digest)`** — recomputes the digest
+from the stored plan and refuses a stale, swapped or expired one **before
+anything spawns**, then runs the workers in wave order. Each worker is killed
+as a process **tree** at its deadline (a plain kill leaves grandchildren
+running on Windows), and its result is written the moment it finishes.
+
+`scope_summary` is first because the approval prompt truncates arguments — it
+is the part the human actually sees.
+
+**`collect(plan_id)`** — reads results back, including after a cancellation.
+Returns summaries and token usage, never full transcripts.
+
+A worker is never trusted to report its own success: agy exits 0 with
+`status: SUCCESS` both when its own timeout fires mid-turn and when a tool is
+auto-denied, in each case having done nothing. A worker that produced no answer
+is recorded as a failure, with the reason.
 
 ```
 PLAN b42ddb6e9ebb
@@ -56,9 +74,16 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 124 tests, no client needed
+python -m pytest                    # 213 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
+
+SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
 ```
+
+Almost everything runs against `tests/fake_worker.py`, a stand-in that emits
+controllable output, so the worker lifecycle is covered without API calls. The
+opt-in suite is the part a fake cannot check: the real command shape, the real
+output schema, and whether a worker actually changes the file.
 
 The suite is built around the invariants later phases rest on rather than
 around coverage: the digest is recomputed in subprocesses with differing
@@ -140,7 +165,13 @@ the configured deadline (a real number) rather than betting on a median.
 ## Where the approval gate is
 
 **The approval gate is the client's tool-permission prompt, which fires before
-every MCP tool call.** `--dangerously-skip-permissions` disables it.
+every MCP tool call.** Running *your* session with
+`--dangerously-skip-permissions` disables it.
+
+> Not to be confused with the workers: they are spawned with that flag, because
+> a worker has no human attached and headless mode otherwise auto-**denies** the
+> `command` tool — silently, while still reporting success. That does not touch
+> your session's prompt, which is where the approval actually happens.
 
 It is not elicitation. `agy` advertises elicitation support, drives the round
 trip correctly, and then auto-cancels every request in 6–16 ms without rendering
