@@ -22,7 +22,7 @@ import anyio
 from mcp import Client, StdioServerParameters
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_TOOLS = {"propose_plan"}
+EXPECTED_TOOLS = {"propose_plan", "execute_plan", "collect"}
 
 
 async def run(server_path: Path) -> int:
@@ -71,7 +71,24 @@ async def run(server_path: Path) -> int:
         elif "plan_digest" not in text:
             failures.append(f"propose_plan returned no digest: {text[:200]}")
 
-        # 5. a refusal still travels as a clean error, not a broken stream
+        # 5. collect on an unknown plan is a clean error, not a broken stream
+        missing = await client.call_tool("collect", {"plan_id": "nosuchplan"})
+        if not missing.is_error:
+            failures.append("collect on an unknown plan_id did not error")
+
+        # 6. execute_plan refuses a bad digest without running anything
+        refused = await client.call_tool(
+            "execute_plan",
+            {
+                "scope_summary": "smoke test: should never execute anything at all",
+                "plan_id": "nosuchplan",
+                "plan_digest": "0" * 64,
+            },
+        )
+        if not refused.is_error:
+            failures.append("execute_plan accepted an unknown plan")
+
+        # 7. a refusal still travels as a clean error, not a broken stream
         bad = await client.call_tool(
             "propose_plan",
             {

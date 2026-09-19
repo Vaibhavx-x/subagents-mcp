@@ -91,8 +91,11 @@ CREATE TABLE IF NOT EXISTS executions (
     started_at        TEXT NOT NULL,
     ended_at          TEXT,
     outcome           TEXT
+        -- 'partial' was missing from the original schema sketch: an execution
+        -- where some workers fail is the common case, not an edge case.
         CHECK (outcome IS NULL OR outcome IN
-               ('complete','cancelled_at_deadline','refused_digest','refused_expiry')),
+               ('complete','partial','cancelled_at_deadline',
+                'refused_digest','refused_expiry')),
     workers_started   INTEGER NOT NULL DEFAULT 0,
     workers_completed INTEGER NOT NULL DEFAULT 0,
     waves_completed   INTEGER NOT NULL DEFAULT 0

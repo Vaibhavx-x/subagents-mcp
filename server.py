@@ -1,6 +1,6 @@
 """Ephemeral sub-agent orchestrator -- MCP server.
 
-Phase 1: validation and planning only. `propose_plan` spawns no subprocesses.
+Three tools: propose_plan (read-only), execute_plan (spawns workers), collect.
 
 Targets MCP Python SDK **v2** (`mcp` 2.2.0) and protocol 2026-07-28. The v1 API
 (`FastMCP`, `get_context()`, `inputSchema`) is wrong here -- see CLAUDE.md.
@@ -13,6 +13,7 @@ drop the connection, which some hosts render as a server with zero tools.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -25,8 +26,11 @@ from subagents import __version__
 from subagents.client_config import apply_timeout, detect_timeout, recommended_block
 from subagents.config import load_config
 from subagents.errors import PlanRefused
+from subagents.execution import collect_plan, execute
+from subagents.worker import DEPTH_ENV_VAR
 from subagents.instructions import INSTRUCTIONS
 from subagents.planning import propose, render
+from subagents.rendering import render_collection, render_execution
 
 CONFIG = load_config()
 SERVER_FILE = Path(__file__).resolve()
@@ -35,6 +39,10 @@ SERVER_FILE = Path(__file__).resolve()
 # client loaded when it spawned us: editing the file later does not change
 # this session's deadline, so a fresh read per call would only mislead.
 CLIENT_TIMEOUT = detect_timeout(SERVER_FILE)
+
+# Set by us on every worker we spawn. Present here means this server is running
+# inside a worker, which may use every other tool but must not fan out again.
+WORKER_DEPTH = os.environ.get(DEPTH_ENV_VAR, "")
 
 logging.basicConfig(
     filename=str(CONFIG.log_file),
@@ -98,6 +106,70 @@ async def propose_plan(tasks_json: str, workspace_root: str, ctx: Context) -> st
         plan.plan_digest[:12],
     )
     return render(plan)
+
+
+@mcp.tool()
+async def execute_plan(
+    scope_summary: str,
+    plan_id: str,
+    plan_digest: str,
+    ctx: Context,
+) -> str:
+    """Run an approved plan's sub-tasks as isolated workers.
+
+    Requires a plan_id and plan_digest from a previous propose_plan call. The
+    digest is recomputed and checked, so a stale or altered plan is refused
+    rather than run under an approval granted for something else.
+
+    Args:
+        scope_summary: Short, human-readable description of what will be
+            touched, e.g. "edits pkg/config.py and pkg/server.py; no deletes".
+            This is shown to the human in the approval prompt, which TRUNCATES
+            arguments -- so lead with the paths and the action. It is recorded
+            verbatim and is not checked against the plan.
+        plan_id: From propose_plan.
+        plan_digest: From propose_plan. Refused if it does not match.
+
+    Returns:
+        Per-task status, summary and token usage. Full transcripts stay in the
+        database behind the handle; call collect(plan_id) to read them back,
+        including after a timeout.
+    """
+    log.info("execute_plan [%s]: plan=%s scope=%r", ctx.request_id, plan_id, scope_summary[:80])
+
+    if WORKER_DEPTH:
+        # This server is running inside a worker we spawned. Workers keep every
+        # other MCP server, tool and skill -- they just cannot fan out again,
+        # which would make process growth unbounded.
+        raise ToolError(
+            "PLAN REFUSED: this session is itself a sub-agent worker "
+            f"({DEPTH_ENV_VAR}={WORKER_DEPTH}), so it cannot launch nested workers. "
+            "Do the work directly, or report back to the parent."
+        )
+
+    try:
+        outcome = await execute(scope_summary, plan_id, plan_digest, CONFIG)
+    except PlanRefused as exc:
+        log.warning("execution refused: %s", exc)
+        raise ToolError(f"PLAN REFUSED: {exc}") from exc
+
+    return render_execution(outcome)
+
+
+@mcp.tool()
+async def collect(plan_id: str, ctx: Context) -> str:
+    """Read back the results of a plan, including after a timeout.
+
+    If execute_plan was cancelled at the client's deadline, the workers that
+    finished have already written their results -- this returns them. Call this
+    rather than retrying execute_plan, which would re-run everything.
+    """
+    log.info("collect [%s]: plan=%s", ctx.request_id, plan_id)
+    try:
+        rows = collect_plan(CONFIG, plan_id)
+    except PlanRefused as exc:
+        raise ToolError(f"NOT FOUND: {exc}") from exc
+    return render_collection(plan_id, rows)
 
 
 def _report(message: str) -> None:

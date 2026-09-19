@@ -153,10 +153,32 @@ is instructed to touch, digest validation against the approved plan, and — by
 hashing declared paths before and after each run — whether what actually changed
 matches what was declared.
 
-**What it does not:** the server does not mediate worker file access. A worker is
-an `agy` process with its own tools; `--add-dir` and `--sandbox` are agy's
-enforcement, not this server's. Stated plainly rather than dressed up as a
-sandbox.
+**What it does not: there is no filesystem containment.** Measured against real
+`agy` with a canary file outside the workspace:
+
+| Configuration | Read outside `--add-dir` | Write outside `--add-dir` |
+|---|---|---|
+| `--add-dir` + `--dangerously-skip-permissions` | succeeded | succeeded |
+| `--add-dir` + `--sandbox` | succeeded | succeeded |
+| `--add-dir`, no skip flag | — | succeeded |
+
+`--add-dir` is *additive scope*, not a boundary — it tells the agent what to
+look at and refuses nothing. `--sandbox` restricts **terminal commands only**.
+And `--print` mode auto-approves tool calls regardless of
+`--dangerously-skip-permissions`, so a worker has no permission gate at all.
+
+An earlier version of this README claimed these flags constrained the worker
+and that we were "trusting agy's enforcement". There is no enforcement to
+trust, and an overclaimed boundary is worse than a stated absence of one.
+
+So the real control points are: **which tasks enter a plan**, **the human
+approval at `execute_plan`** — the only gate in the system — and **post-run
+hashing**, which detects changes only to paths we thought to hash.
+
+> **The approval prompt truncates arguments**, which is why `scope_summary` is
+> `execute_plan`'s first parameter: it is the part the human actually sees.
+> Note also that the prompt offers "always allow … (Persist to settings.json)".
+> Choosing that permanently removes the only human gate.
 
 ## Layout
 

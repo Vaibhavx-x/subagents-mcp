@@ -28,13 +28,24 @@ for one small edit costs about 10s of process startup and saves nothing.
 1. `propose_plan(tasks_json, workspace_root)` -- validates and returns a
    readable plan, a `plan_id` and a `plan_digest`. Cheap, read-only, spawns
    nothing. Relay the plan text to the human.
-2. `execute_plan(plan_id, plan_digest, scope_summary)` -- the human approves
-   via the tool-permission prompt, which shows your `scope_summary`. Write a
-   real description of what will be touched, not an opaque id.
+2. `execute_plan(scope_summary, plan_id, plan_digest)` -- the human approves
+   via the tool-permission prompt.
 3. `collect(plan_id)` -- reads results back.
 
 Never call `execute_plan` without a `propose_plan` first: the digest is checked
 against the stored plan and a mismatch is refused.
+
+## Writing scope_summary
+
+This is the only thing a human reads before approving, and **the prompt
+truncates arguments after roughly 40 characters.** Lead with the paths and the
+action; anything after the first clause may never be seen.
+
+    good: "edits pkg/config.py and pkg/server.py; no deletes"
+    bad:  "This plan will perform a refactoring operation across the codebase"
+
+It is recorded exactly as you write it. Do not pad it, and do not restate the
+plan id.
 
 ## Writing tasks_json
 
@@ -60,6 +71,13 @@ verified, because there is nothing to check them against.
 - `tainted[]` -- a file the task READ was changed by another worker while it
   ran, so its answer may rest on stale content. The result is still returned.
   Re-run just that task by `task_ref`.
+
+## You may be a worker yourself
+
+If you are running as a sub-agent worker, `execute_plan` will refuse: workers
+cannot launch further workers, because nesting makes the number of processes
+grow without bound. Everything else is still yours -- other MCP servers, tools
+and skills all work normally. Do the task directly and report back.
 
 ## If a call times out
 

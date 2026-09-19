@@ -239,3 +239,71 @@ is asked to approve, and it showed a filename that does not exist as written.
 Real case is now kept on the Task for display, and normcasing happens inside
 the digest and the conflict comparison. The distinction is between what the
 code compares and what the human reads, and they are not the same thing.
+
+## 15. `--add-dir` and `--sandbox` enforce nothing
+
+The design rested on a sentence that was never tested: that `--add-dir` and
+`--sandbox` constrain a worker, and that we were "trusting agy's enforcement,
+not our own". Tested with a canary file outside the workspace:
+
+| Configuration | Read outside | Write outside |
+|---|---|---|
+| `--add-dir` + `--dangerously-skip-permissions` | succeeded | succeeded |
+| `--add-dir` + `--sandbox` | succeeded | succeeded |
+| `--add-dir`, no skip flag | — | succeeded |
+
+`--add-dir` is additive scope, not a boundary. `--sandbox` restricts terminal
+commands only — its help says so literally, and it was read as "sandbox" anyway.
+And `--print` mode auto-approves regardless of `--dangerously-skip-permissions`,
+so a worker has no permission gate at all.
+
+There was no enforcement to trust. The honest claim is that the human approval
+at `execute_plan` is the only gate, and post-run hashing the only detection.
+
+*Lesson kept: a flag named `--sandbox` is not a sandbox until you have watched
+it refuse something.*
+
+## 16. The approval prompt truncates, so parameter order is a safety property
+
+The prompt renders and declining genuinely stops the call. But it shows only
+about 40 characters of arguments, in **schema order**:
+
+```
+subagents/propose_plan({"tasks_json":"[{\"task_ref\"...) (ctrl+o to expand)
+```
+
+`execute_plan` was designed as `(plan_id, plan_digest, scope_summary)`. That
+would have rendered as `({"plan_id":"b42ddb6e9399"...` — the human approving an
+opaque id while the one readable argument sat past the cut.
+
+Reordering to `(scope_summary, plan_id, plan_digest)` costs nothing and changes
+the preview to:
+
+```
+subagents/execute_plan({"scope_summary": "edits pkg/config.py and pkg/serve...)
+```
+
+A test pins the order, because it looks cosmetic and is not.
+
+Also worth knowing: the prompt offers "always allow … (Persist to
+settings.json)". A user who picks it permanently removes the only human gate in
+the system.
+
+## 17. Pipe EOF is not process exit
+
+`asyncio`'s `proc.wait()` completes when the subprocess transport sees EOF on
+the pipes — and a grandchild inherits those handles. So a worker that starts any
+background process (a dev server, a watcher, a daemon left behind by a tool)
+keeps the pipes open after exiting, and `proc.wait()` blocks until the timeout.
+
+The worker would be recorded as a **timeout despite having succeeded**, its
+transcript parsed correctly the whole time, and its process tree killed for no
+reason. Caught by a test that spawned a grandchild and asserted success.
+
+Fixed by polling process liveness directly. Two regression tests cover it: one
+on the reported status, one on latency.
+
+Related, and measured separately: `asyncio.wait_for(proc.communicate(), t)`
+**discards** partial output when it times out. A child that flushed real work
+before hanging yields `b''`. Draining into buffers owned by reader tasks keeps
+it, which is what lets a timed-out worker still return what it managed to do.
