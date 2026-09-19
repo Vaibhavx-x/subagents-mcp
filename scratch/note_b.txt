@@ -1,0 +1,1 @@
+Benchmark measurements show that context accumulation from per-turn inputs dominates token costs over generation by one to two orders of magnitude. Delegating sub-tasks to subagents allows the parent agent to retain only concise summaries rather than accumulating full tool transcripts.

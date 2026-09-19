@@ -131,7 +131,10 @@ Register the server in `~/.gemini/config/mcp_config.json`:
   than one Python; only the one with `mcp` installed will work.
 - **`forceAllToolsEager: true`.** If tools can be deferred, the agent may decide
   to do the work itself before the orchestrator is even in context. Being
-  invisible at decision time is the failure that matters.
+  invisible at decision time is the failure that matters — but note that this
+  makes the tool *choosable*, not *preferred*: asked plainly for a task, the
+  parent still does it itself. Measured, `NOTES.md` §22. Ask for delegation, or
+  the orchestrator sits there unused.
 - **`cwd` pinned.** It otherwise defaults to the workspace root, which changes
   where the SQLite file lands.
 

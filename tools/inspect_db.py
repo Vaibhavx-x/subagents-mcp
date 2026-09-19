@@ -19,6 +19,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from subagents.config import load_config  # noqa: E402
 
+# Worker summaries are model-authored and routinely contain curly quotes, dashes
+# and worse. A Windows console is cp1252, where printing those raises
+# UnicodeEncodeError -- the inspector would crash on exactly the runs worth
+# inspecting.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 def clip(text: object, n: int = 88) -> str:
     s = " ".join(str(text or "").split())

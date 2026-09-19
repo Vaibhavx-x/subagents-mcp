@@ -429,3 +429,36 @@ in the client's own cache, and returns "unknown" — which cost the parent agent
 a long detour into reading `server.py`, `config.py` and 800 lines of log to
 diagnose. Exactly the context burn this project exists to avoid, triggered by a
 stale process.
+
+## 22. An eager tool is visible, not preferred
+
+`forceAllToolsEager: true` was added so the orchestrator would be in context at
+decision time, on the reasoning that a deferred tool cannot be chosen. True, and
+not enough.
+
+Measured 2026-09-20. The same task was given twice in one session. Phrased as
+*"Use the subagents MCP server. Do not do any of this work yourself. Call
+propose_plan with..."* the parent delegated, and paid two summaries and a
+handle. Phrased as a bare task description — the way anyone would actually ask —
+the parent did it itself: it read `NOTES.md` (432 lines), `README.md` (248),
+`CLAUDE.md` (209), all seventeen files under `subagents/`, `server.py` (267),
+and two directory listings, then began writing the output directly. The
+orchestrator was loaded, eager, and never considered.
+
+So the honest shape of the claim is: eager registration removes one failure
+(the tool being invisible), and does not create a preference. The parent's
+default is to do the work, because doing the work is what it is for.
+
+Levers that exist, and their limits:
+
+- the server's `instructions.md` — verified to be read at call time, but the
+  agent only reads it once it has decided to engage the server, so it shapes
+  *how* delegation happens, never *whether* it does;
+- how the request is phrased, which is the user's, not ours;
+- a project-level agent instruction file, which **agy 1.2.6 does not have** —
+  no flag in `agy --help`, and `agy agents` lists none.
+
+*Lesson kept: I had written the config note as though visibility solved
+adoption. It solves being choosable. The run that exposed this is also the
+cleanest demonstration of the problem the project exists for — the parent
+burned twenty-odd file reads on a task it could have delegated for a sentence.*
