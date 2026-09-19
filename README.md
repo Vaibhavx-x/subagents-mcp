@@ -105,6 +105,34 @@ Register the server in `~/.gemini/config/mcp_config.json`:
 `agy mcp add` cannot set `timeoutSeconds`, `cwd`, or `toolConfig` — it has no
 flags for them. These are hand-edits to the JSON.
 
+### Check it actually took effect
+
+The server reads the client's config and reports the deadline that will really
+apply, so you never have to guess:
+
+```bash
+python server.py --check-config     # exit 0 = configured adequately
+python server.py --fix-config       # set timeoutSeconds to 900 (backs the file up)
+```
+
+`--fix-config` is deliberate and never automatic. The client reads its config
+when it *spawns* the server, so a server that edited the file mid-session could
+not raise its own deadline for the session that noticed the problem — and it
+would be silently editing a shared file that other MCP servers depend on.
+
+Because the deadline is read rather than assumed, `propose_plan` states it as a
+fact and warns only when the plan genuinely will not fit:
+
+```
+  estimate       : ~70s expected, ~610s worst case
+  client deadline : 900s (timeoutSeconds in ~/.gemini/config/mcp_config.json)
+```
+
+This matters more than the estimate. A worker's duration is not predictable —
+it may call other MCP servers, install packages, or run a test suite — so the
+plan compares its worst case (the per-worker timeout, a real ceiling) against
+the configured deadline (a real number) rather than betting on a median.
+
 > The config parser is **lenient**: unknown keys and misspelled enum values are
 > accepted silently rather than rejected. A typo here does not produce an error,
 > it produces a setting that never takes effect. Verify behaviour, not syntax.
