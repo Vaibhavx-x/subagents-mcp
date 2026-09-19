@@ -229,3 +229,58 @@ def test_next_step_names_execute_plan(workspace):
     text = text_of(call(tasks_json(task_entry("a", reads=["README.md"])), workspace))
     assert "execute_plan(" in text
     assert "do not retry" in text.lower()
+
+
+# --------------------------------------------------- Phase 2 contract guard
+def test_digest_recomputes_from_the_stored_plan(workspace, cfg):
+    """execute_plan must be able to re-derive the digest from what was stored.
+
+    The whole tamper-refusal design assumes a stored plan can be re-hashed to
+    the same value. It can -- but only by rebuilding Task objects and calling
+    compute_digest, which normcases paths internally. Hashing plan_json
+    directly is the obvious shortcut and would refuse every valid plan, so
+    this pins the contract before Phase 2 relies on it.
+    """
+    import hashlib
+
+    from subagents.db import connect
+    from subagents.digest import compute_digest
+    from subagents.models import Task
+
+    text = text_of(
+        call(
+            tasks_json(
+                task_entry("a", reads=["README.md"], writes=["pkg/config.py"]),
+                task_entry("b", reads=["pkg/config.py"]),
+            ),
+            workspace,
+        )
+    )
+    conn = connect(cfg.db_path)
+    try:
+        row = conn.execute("SELECT plan_json, plan_digest, workspace_root FROM plans").fetchone()
+    finally:
+        conn.close()
+
+    stored = json.loads(row["plan_json"])
+    rebuilt = [
+        Task(t["task_ref"], t["instruction"], tuple(t["reads"]), tuple(t["writes"]), t["model"])
+        for t in stored
+    ]
+    assert compute_digest(row["workspace_root"], rebuilt) == row["plan_digest"] == digest_from(text)
+
+    naive = hashlib.sha256(row["plan_json"].encode()).hexdigest()
+    assert naive != row["plan_digest"], "plan_json is not the digest input; do not hash it directly"
+
+
+def test_stored_plan_keeps_real_path_case(workspace, cfg):
+    """Display and audit need the real filename; only comparison normcases."""
+    from subagents.db import connect
+
+    call(tasks_json(task_entry("a", reads=["README.md"])), workspace)
+    conn = connect(cfg.db_path)
+    try:
+        stored = json.loads(conn.execute("SELECT plan_json FROM plans").fetchone()["plan_json"])
+    finally:
+        conn.close()
+    assert stored[0]["reads"][0].endswith("README.md")
