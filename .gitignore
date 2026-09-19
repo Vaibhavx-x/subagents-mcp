@@ -9,6 +9,10 @@ venv/
 .env
 *.key
 
+# Server runtime log. Anchored to the root so bench/logs/*.log -- which are
+# committed evidence -- are not swept up with it.
+/subagents.log
+
 # Server state (SQLite lands beside the server; WAL mode adds -wal/-shm)
 *.db
 *.db-wal
