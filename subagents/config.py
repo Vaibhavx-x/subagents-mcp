@@ -27,18 +27,42 @@ EXPECTED_WORKER_S = 60
 DEFAULT_TOOL_DEADLINE_S = 180
 
 
+# Every key this server reads. Used only to warn about the ones it does not:
+# a misspelled key is otherwise a setting that never takes effect, which is the
+# exact failure the README criticises the client's config parser for.
+KNOWN_KEYS = frozenset({
+    "SUBAGENTS_PYTHON", "SUBAGENTS_AGY_PATH", "SUBAGENTS_ALLOWED_ROOTS",
+    "SUBAGENTS_DB_PATH", "SUBAGENTS_MODEL", "SUBAGENTS_MODEL_ESCALATE",
+    "SUBAGENTS_WORKER_TIMEOUT_S", "SUBAGENTS_MAX_PARALLEL",
+    "SUBAGENTS_PLAN_TTL_S", "SUBAGENTS_LOG_FILE", "SUBAGENTS_LOG_LEVEL",
+    "SUBAGENTS_DEPTH",
+})
+
+
 def _load_dotenv(path: Path) -> dict[str, str]:
-    """Minimal .env reader. No dependency, no interpolation, no export syntax."""
+    """Minimal .env reader. No dependency, no interpolation, no export syntax.
+
+    Read as utf-8-**sig**, not utf-8. PowerShell 5.1's `Out-File -Encoding utf8`
+    -- the obvious way to write this file on Windows, and the way it was written
+    the first time -- emits a BOM. Plain utf-8 keeps it, so the first key parses
+    as `﻿SUBAGENTS_WORKER_TIMEOUT_S`, matches nothing, and the default is
+    used with no error anywhere. Measured; see NOTES.md section 23.
+    """
     out: dict[str, str] = {}
     if not path.is_file():
         return out
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for raw in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
         out[key.strip()] = value.strip().strip('"').strip("'")
     return out
+
+
+def unknown_keys(dotenv: dict[str, str]) -> list[str]:
+    """Keys in .env that this server will never read."""
+    return sorted(k for k in dotenv if k not in KNOWN_KEYS)
 
 
 def _get(key: str, default: str, dotenv: dict[str, str]) -> str:

@@ -462,3 +462,37 @@ Levers that exist, and their limits:
 adoption. It solves being choosable. The run that exposed this is also the
 cleanest demonstration of the problem the project exists for — the parent
 burned twenty-odd file reads on a task it could have delegated for a sentence.*
+
+## 23. A BOM made `.env` do nothing, silently
+
+Test 3 was meant to force a worker timeout. The worker was given a 45-second
+budget, ran for **105.9 seconds**, and reported success. Nothing errored.
+
+The `.env` had been written with `Out-File -Encoding utf8`, which in PowerShell
+5.1 means **UTF-8 with a BOM**. `_load_dotenv` read it as plain `utf-8`, so the
+first key parsed as `﻿SUBAGENTS_WORKER_TIMEOUT_S`, matched nothing, and
+the 600-second default applied. A file that exists, is readable, contains the
+right key spelled correctly, and has no effect whatsoever.
+
+Three fixes, because one was not the problem:
+
+1. `_load_dotenv` now reads `utf-8-sig`. A CRLF+BOM file round-trips, pinned by
+   a test written from the exact bytes PowerShell produces.
+2. Unknown `SUBAGENTS_*` keys are logged as warnings at startup. The README
+   criticises the client's config parser for accepting typos silently; doing
+   the same thing ourselves was worse than the thing being criticised.
+3. The startup log now records the **effective** `worker_timeout`,
+   `max_parallel` and `model`, not just paths. A config that failed to apply is
+   otherwise indistinguishable from one that worked, and the difference only
+   surfaces as a worker running for the wrong length of time.
+
+Two other things had to be true at once for this to hide, and both were: the
+process-kill command that should have restarted the server was mistyped
+(`$_.ProcessId-Force`, no space), so the old process may have survived anyway —
+and even a correct restart would have read the same dead file.
+
+*Lesson kept: the failure was not that the setting was wrong. It was that
+nothing in the system could tell me whether the setting had been read. Config
+that cannot be observed after the fact is config you are guessing about — which
+is the same complaint this project makes about the client, arrived at from the
+other side.*

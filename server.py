@@ -24,7 +24,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from subagents import __version__
 from subagents.client_config import apply_timeout, detect_timeout, recommended_block
-from subagents.config import load_config
+from subagents.config import load_config, unknown_keys
 from subagents.errors import PlanRefused
 from subagents.execution import collect_plan, execute
 from subagents.worker import DEPTH_ENV_VAR
@@ -245,13 +245,23 @@ def main() -> None:
     if "--fix-config" in sys.argv:
         raise SystemExit(fix_config())
 
+    # The effective values, not just the paths. A .env that failed to apply --
+    # a BOM, a typo, a server not restarted -- is otherwise indistinguishable
+    # from one that worked, and the difference only shows up as a worker that
+    # runs for the wrong length of time. See NOTES.md section 23.
     log.info(
-        "subagents %s starting | python=%s | db=%s | roots=%s",
+        "subagents %s starting | python=%s | db=%s | roots=%s | "
+        "worker_timeout=%ss | max_parallel=%s | model=%s",
         __version__,
         sys.version.split()[0],
         CONFIG.db_path,
         [str(r) for r in CONFIG.allowed_roots],
+        CONFIG.worker_timeout_s,
+        CONFIG.max_parallel,
+        CONFIG.model,
     )
+    for key in unknown_keys(CONFIG._dotenv):
+        log.warning(".env sets %s, which this server never reads -- misspelled?", key)
     if not CLIENT_TIMEOUT.is_explicit:
         log.warning(
             "client timeoutSeconds is not set (config=%s, entry=%s): tool calls will be "

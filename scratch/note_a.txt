@@ -1,1 +1,0 @@
-An initial probe incorrectly concluded that the client used protocol 2026-07-28 based on an `initialize` handshake response. However, the specification reveals that 2026-07-28 does not use an `initialize` handshake, meaning the probe had actually triggered the legacy fallback path.
