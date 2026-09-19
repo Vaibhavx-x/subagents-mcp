@@ -533,3 +533,59 @@ does.
 
 *Lesson kept: found by reading output during a test aimed at something else.
 Every number the tool prints is a claim, including the ones nobody asked about.*
+
+## 25. The cancellation handler I added does nothing on this machine
+
+Cancelling a fan-out must not leave `agy` processes running, so `run_worker`
+grew a `CancelledError` handler that terminates the process tree, and a test to
+prove it. Then I deleted the handler and re-ran the test. **It still passed.**
+
+On Windows the `finally` block already calls `group.close()`, which drops the
+last handle to the job -- and `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` takes the
+tree down without being asked. The explicit `terminate()` is doing nothing here.
+
+It is not dead code: on POSIX `close()` is a no-op and nothing else reaps the
+tree, so the handler is the only thing that makes the two platforms behave the
+same. But the comment I first wrote -- "without this a cancelled fan-out leaves
+live processes" -- was false on the only machine that can run the test.
+
+Both the comment and the test docstring now say which half is verified here and
+which half is reasoned about. The test guards the outcome, not the mechanism.
+
+*Lesson kept: the test passed, so the code looked justified. Deleting the code
+and watching the test pass anyway is the only thing that told me otherwise --
+and that check costs thirty seconds.*
+
+## 26. An exhausted rate limit escalated to a more expensive model
+
+A rate-limited worker is retried with backoff rather than escalated: a 429 is
+the provider asking for less traffic, not a task the model got wrong.
+
+The bounded-retry test then failed with `assert 6 == 3`. After three attempts
+the rate limit was exhausted, the result was still a failure, and the
+escalation path picked it up and ran it three more times on
+`gemini-3.7-flash-medium` -- answering a quota refusal by sending a **more
+expensive** request at the same quota.
+
+Two rules that were individually right composed into something neither
+intended. `should_escalate` now refuses a rate-limited result outright.
+
+*Lesson kept: the bug was in the seam, not in either rule. It surfaced only
+because the test asserted an exact attempt count rather than "eventually
+failed" -- a looser assertion would have passed and the spend would have been
+real.*
+
+## 27. `blocked` and `tainted` had drifted from what the code does
+
+`instructions.md` -- the text the parent agent actually reads -- described
+`blocked[]` as "refused for scope" and `tainted[]` as "a file the task READ was
+changed by another worker while it ran". Both were written in Phase 1 as
+intentions. Phase 3 implemented neither.
+
+What they mean now: **blocked** is a task that never ran because the task it
+depends on failed, and **tainted** is a task that changed paths the plan did
+not declare. A parent acting on the old text would re-propose the wrong task.
+
+*Lesson kept: documentation written ahead of the code is a forecast, and a
+forecast that is never reconciled becomes a lie told confidently to the one
+reader who cannot check it.*

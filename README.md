@@ -10,9 +10,11 @@ parent calls `execute_plan`. Workers run as separate processes, each writing its
 full output to SQLite the moment it finishes and returning only a short summary
 and a handle. `collect` reads results back, **including after a timeout**.
 
-> **Status: Phase 2 complete.** All three tools work end to end against the
-> real client and a real worker. Workers run **one at a time** -- parallelism
-> within a wave, taint hashing and the escalation ladder are Phase 3.
+> **Status: Phase 3 complete.** Workers in a wave run **concurrently** under a
+> ceiling; every run is hashed before and after and reports what changed
+> against what was declared; a failed worker is retried once on a stronger
+> model and its dependants are blocked rather than fed stale state. Remaining:
+> the tool-call cache and git worktrees, both deliberately cut.
 
 ---
 
@@ -32,8 +34,8 @@ delegates them carries five summaries.
 
 ## What works today
 
-All three tools, end to end against a real worker. Workers run **one at a
-time**; parallelism within a wave is Phase 3.
+All three tools, end to end against a real worker, with the workers in a wave
+running at the same time.
 
 **`propose_plan(tasks_json, workspace_root)`** — validates a set of sub-tasks
 and returns an executable plan. Read-only; spawns nothing.
@@ -47,9 +49,19 @@ checks wall-clock against the deadline read from your client config.
 
 **`execute_plan(affects, plan_id, plan_digest)`** — recomputes the digest
 from the stored plan and refuses a stale, swapped or expired one **before
-anything spawns**, then runs the workers in wave order. Each worker is killed
-as a process **tree** at its deadline (a plain kill leaves grandchildren
-running on Windows), and its result is written the moment it finishes.
+anything spawns**, then runs the plan wave by wave. Within a wave the workers
+run concurrently under `max_parallel`; between waves nothing overlaps, because
+a task that reads what another writes must not start until that writer has
+exited. Each worker is killed as a process **tree** at its deadline (a plain
+kill leaves grandchildren running on Windows), and its result is written the
+moment it finishes.
+
+A worker whose dependency failed is **blocked**, never spawned — it would read
+state its writer never produced and have no way to tell, and a confident wrong
+answer is worse than a failure. A worker that fails is retried once on the
+escalation model; a worker that *timed out* is not, because it needed more time
+rather than more reasoning; a rate-limited one is waited out rather than
+answered with a more expensive request at the same quota.
 
 `affects` carries the human-readable scope. It is named for the approval
 prompt rather than for the code: the prompt truncates arguments after ~40
@@ -81,7 +93,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 227 tests, no API calls
+python -m pytest                    # 293 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
@@ -90,7 +102,9 @@ SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends token
 Almost everything runs against `tests/fake_worker.py`, a stand-in that emits
 controllable output, so the worker lifecycle is covered without API calls. The
 opt-in suite is the part a fake cannot check: the real command shape, the real
-output schema, and whether a worker actually changes the file.
+output schema, whether a worker actually changes the file, whether a real wave
+genuinely overlaps, and — the one that matters most — whether a real agent
+writing outside its declaration is actually detected.
 
 Two of them are about what happens when things are killed or collide: a
 hard-killed server must take its workers' whole process tree with it (Windows
@@ -197,8 +211,20 @@ prompt shows intent rather than an opaque id.
 
 **What the code enforces:** which tasks are allowed into a plan, what each worker
 is instructed to touch, digest validation against the approved plan, and — by
-hashing declared paths before and after each run — whether what actually changed
-matches what was declared.
+hashing before and after each run — whether what actually changed matches what
+was declared.
+
+That hashing works at two levels. Declared paths get sha256, so both sides of
+the comparison are real content. Everything else under the workspace root gets
+a `(size, mtime_ns)` manifest, which catches the realistic failure — an
+undeclared write *inside* the root — cheaply enough to run every time. The
+manifest can over-report: a byte-identical rewrite still moves mtime. That is
+the right direction for a detector.
+
+Attribution is stated rather than implied. Write sets are provably disjoint, so
+a declared path is attributable to one task; an **undeclared** change with
+several workers running at once is attributable only to the wave, and the
+report says "in this wave" rather than naming a worker it cannot identify.
 
 **What it does not: there is no filesystem containment.** Measured against real
 `agy` with a canary file outside the workspace:

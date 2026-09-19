@@ -66,11 +66,30 @@ verified, because there is nothing to check them against.
 
 ## What comes back
 
-- `blocked[]` -- refused for scope. Re-propose with the path added to the right
-  task, or drop that work.
-- `tainted[]` -- a file the task READ was changed by another worker while it
-  ran, so its answer may rest on stale content. The result is still returned.
-  Re-run just that task by `task_ref`.
+Per task: a status, a short summary, token usage, and a handle. Plus two things
+that are not statuses and mean different actions:
+
+- **BLOCKED** -- the task never ran, because a task it depends on did not
+  succeed. Running it would have read state its writer never produced, and it
+  would have had no way to tell. Fix or re-propose the upstream task first;
+  re-proposing the blocked one alone will just block again.
+- **TAINTED** -- the task changed paths the plan did not declare, or modified
+  something it declared read-only. The change was **detected, not prevented**:
+  nothing stops a worker writing where it likes, so this is a report about what
+  already happened. Read the named paths before trusting the result.
+
+A tainted task is never retried automatically -- a second run compounds an
+undeclared change rather than correcting it.
+
+## Timing and cost
+
+Workers in the same wave run at the same time, up to a configured ceiling.
+Waves run one after another, because a task that reads what another task writes
+must not start until that writer has exited.
+
+A failed worker is retried once on a stronger model. A timed-out one is not --
+it needed more time, not more reasoning. A rate-limited one is waited out, not
+escalated.
 
 ## You may be a worker yourself
 

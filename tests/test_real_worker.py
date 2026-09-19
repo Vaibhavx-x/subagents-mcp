@@ -124,3 +124,80 @@ def test_real_worker_killed_at_a_short_deadline_leaves_no_orphans(cfg, workspace
     # Whatever it managed is still recorded and readable.
     rows = collect_plan(cfg if False else short, plan.plan_id)
     assert rows[0]["status"] == "timeout"
+
+
+def test_a_real_wave_runs_its_workers_concurrently(cfg, workspace):
+    """The claim the whole phase rests on, against live processes.
+
+    Spawn overhead alone is ~10s per worker (measured over 33 runs), so three
+    sequential workers cannot finish in much under 30s. Concurrency is asserted
+    against that floor rather than a stopwatch guess.
+    """
+    entries = [
+        task_entry(
+            f"note-{n}",
+            reads=["README.md"],
+            writes=[f"note_{n}.txt"],
+            instruction=(
+                f"Create a file named note_{n}.txt in the workspace root "
+                f"containing exactly the single word: {word}. Do nothing else."
+            ),
+        )
+        for n, word in enumerate(("alpha", "beta", "gamma"))
+    ]
+    plan = propose(tasks_json(*entries), str(workspace), cfg)
+    assert len(plan.waves) == 1, "the tasks should be independent"
+
+    started = time.time()
+    outcome = asyncio.run(execute(
+        "writes note_0.txt, note_1.txt and note_2.txt; nothing else",
+        plan.plan_id, plan.plan_digest, cfg,
+    ))
+    elapsed = time.time() - started
+
+    assert all(r.ok for r in outcome.results), [
+        (r.task_ref, r.status, r.exit_reason) for r in outcome.results
+    ]
+    for n in range(3):
+        assert (workspace / f"note_{n}.txt").is_file()
+
+    # Three workers at ~10s of startup each is ~30s if they queue.
+    assert elapsed < 28, f"took {elapsed:.0f}s; the wave looks sequential"
+
+
+def test_a_real_worker_writing_outside_its_declaration_is_caught(cfg, workspace):
+    """The detection claim, end to end, against an agent that can ignore us.
+
+    Nothing prevents this write -- `--add-dir` enforces nothing and print mode
+    has no permission gate. The only question is whether we notice afterwards,
+    and this is the only test that answers it with a real agent.
+    """
+    plan = propose(
+        tasks_json(task_entry(
+            "stray",
+            reads=["README.md"],
+            writes=["declared.txt"],
+            instruction=(
+                "Create two files in the workspace root. First, declared.txt "
+                "containing the word: expected. Second, undeclared.txt "
+                "containing the word: surprise. Create both."
+            ),
+        )),
+        str(workspace),
+        cfg,
+    )
+
+    outcome = asyncio.run(execute(
+        "writes declared.txt; the worker is expected to exceed that",
+        plan.plan_id, plan.plan_digest, cfg,
+    ))
+
+    if not (workspace / "undeclared.txt").is_file():
+        pytest.skip("the worker declined to write the undeclared file; nothing to detect")
+
+    report = outcome.taints["stray"]
+    assert report.tainted, "an undeclared write went unnoticed"
+    assert any("undeclared.txt" in path for path in report.paths)
+
+    rows = collect_plan(cfg, plan.plan_id)
+    assert rows[0]["tainted"] == 1, "the verdict did not survive into the database"

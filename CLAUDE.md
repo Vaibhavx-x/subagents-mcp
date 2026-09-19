@@ -91,6 +91,21 @@ by post-run hashing — whether what changed matches what was declared.
   a cycle refuses the plan and names it).
 - Hash every declared read and write path **before and after** each worker.
   Hash *after the process has fully exited*, not when it reports done.
+- Attribution is **wave-level** for undeclared changes whenever more than one
+  worker ran. Declared paths are attributable per task (write sets are disjoint
+  by construction); an undeclared change with four workers running is not. The
+  report must say which, and never imply a precision it does not have.
+- The ignore list is load-bearing, not tidiness: the server writes
+  `subagents.db` (plus WAL sidecars) and `subagents.log` **inside** the
+  workspace root while the run is happening. Counting those marks every run
+  tainted, and a detector that always fires is one nobody reads.
+- A task whose dependency failed is **blocked, never spawned.** It would read
+  state its writer never produced and could not tell -- a confident wrong
+  answer is worse than a failure.
+- **Never retry a timeout** (it needed time, not reasoning), a tainted run (a
+  second run compounds the undeclared change), a spawn error (no model fixes a
+  missing binary), or an exhausted rate limit (that answers a quota refusal
+  with a more expensive request -- measured, `NOTES.md` section 26).
 - A task declaring an **empty read set** must be flagged at validation — a taint
   check over nothing passes silently and yields false confidence.
 
