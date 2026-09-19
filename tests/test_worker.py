@@ -326,3 +326,43 @@ def test_timeout_banner_is_matched_on_stderr_only():
         "", 0, "m", "s", "f", timed_out=False,
     )
     assert result.ok, result.exit_reason
+
+
+# ------------------------------------------------------- cancellation
+def test_cancelling_a_worker_kills_its_process_tree():
+    """A cancelled fan-out must not leave agy processes running.
+
+    Note what this test does and does not prove. On Windows it passes with the
+    CancelledError handler removed, because `close()` in the finally block
+    drops the last job handle and KILL_ON_JOB_CLOSE kills the tree anyway --
+    verified by deleting the handler and re-running. So here it guards the
+    outcome, not the mechanism: either path dying would fail it.
+
+    The explicit terminate matters on POSIX, where `close()` does nothing and
+    nothing else would reap the tree. That case is not reachable from this
+    machine, which is exactly why it is written down rather than assumed.
+    """
+    marker = "FAKE_WORKER_CANCEL_1"
+
+    async def main():
+        task = asyncio.ensure_future(
+            run_worker(
+                "t",
+                fake_cmd("--mode", "hang", "--spawn-child", "--marker", marker),
+                timeout_s=300, cwd=REPO_ROOT, model="fake-model",
+            )
+        )
+        for _ in range(100):
+            await asyncio.sleep(0.1)
+            if marker_alive(marker) >= 2:
+                break
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    try:
+        asyncio.run(main())
+        time.sleep(1.0)
+        assert marker_alive(marker) == 0, "a worker outlived the cancellation"
+    finally:
+        kill_marker(marker)

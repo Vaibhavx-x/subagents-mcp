@@ -393,11 +393,15 @@ async def run_worker(
         )
     except asyncio.CancelledError:
         # The tool call was cancelled at the client deadline, or the wave was
-        # torn down. Kill the tree on the way out: `close()` alone relies on
-        # KILL_ON_JOB_CLOSE and is a no-op on POSIX, so a cancelled fan-out
-        # would leave live agy processes spending tokens with nobody reading
-        # the answer. The worker owns its own cleanup rather than the caller
-        # reaching into it.
+        # torn down. Kill the tree explicitly on the way out.
+        #
+        # On Windows this is belt and braces: `close()` in the finally block
+        # drops the last job handle and KILL_ON_JOB_CLOSE already takes the
+        # tree down -- measured, the tree-kill test passes with this handler
+        # removed. On POSIX `close()` does nothing at all, so without this a
+        # cancelled fan-out would leave live agy processes spending tokens
+        # with nobody reading the answer. The explicit terminate is what makes
+        # the two platforms behave the same.
         log.warning("worker %s cancelled; killing process tree", task_ref)
         group.terminate()
         raise
