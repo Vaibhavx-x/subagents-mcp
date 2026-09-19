@@ -187,3 +187,55 @@ most valuable thing this bench could gain is a task some configuration loses.
 One non-monotonic result is already visible — C beat B on t1 (107 s vs 128 s) —
 which at n = 2 is most likely noise, and is a reminder of how soft these medians
 still are.
+
+## 12. The probe's own pattern was already stale: `ctx.info()` is deprecated
+
+`probe_server.py` is the proven-working v2 reference in this repo, so Phase 1
+copied its shape -- including `await ctx.info(...)` for per-call logging. The
+SDK answered immediately:
+
+```
+MCPDeprecationWarning: The logging capability is deprecated as of
+2026-07-28 (SEP-2577).
+```
+
+The probe was written before that protocol revision landed, so "it worked in
+the probe" was not evidence it is current. Logging now goes to the file logger
+with `ctx.request_id` for correlation, and the test suite runs with
+`error::DeprecationWarning` for this project's own modules so a future
+reintroduction fails rather than warns.
+
+*Lesson kept: a working reference implementation dates. Verified-once is not
+verified-now, especially across a protocol revision.*
+
+## 13. `instructions.md` confirmed, end to end
+
+Entry 6 established from the binary that the file *should* be written. It now
+demonstrably is. Registering the server and running one agy session produced:
+
+```
+~/.gemini/antigravity-cli/mcp/subagents/
+  instructions.md     2546 bytes  -- byte-for-byte the instructions= string
+  propose_plan.json   1398 bytes  -- the tool schema
+```
+
+The cached schema also confirms the SDK strips the `ctx: Context` parameter:
+only `tasks_json` and `workspace_root` are exposed, both required. A `ctx`
+leaking into the public schema would have invited the model to pass something
+for it.
+
+The last open question from the context transfer is closed.
+
+## 14. Normcasing paths too early made the approval text wrong
+
+Declared paths are normcased so that `README.md` and `readme.md` collide in
+conflict detection and produce the same digest -- correct, since Windows treats
+them as one file.
+
+Applying that at parse time was wrong in a way only visible in the output: the
+plan rendered `d:\projects\subagents-mcp\readme.md`. That text is what a human
+is asked to approve, and it showed a filename that does not exist as written.
+
+Real case is now kept on the Task for display, and normcasing happens inside
+the digest and the conflict comparison. The distinction is between what the
+code compares and what the human reads, and they are not the same thing.

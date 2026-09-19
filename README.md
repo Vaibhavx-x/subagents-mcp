@@ -10,10 +10,11 @@ parent calls `execute_plan`. Workers run as separate processes, each writing its
 full output to SQLite the moment it finishes and returning only a short summary
 and a handle. `collect` reads results back, **including after a timeout**.
 
-> **Status: pre-implementation.** The capability probe and the model benchmark
-> are complete and their results are in this repo. The server itself is not
-> built yet. Everything below that describes runtime behaviour is design, not a
-> claim about running code.
+> **Status: Phase 1 complete.** `propose_plan` works end to end against the
+> real client. `execute_plan` and `collect` are **not built yet** -- no
+> subprocess is ever spawned at present, so nothing here runs a worker.
+> Anything below describing worker execution is design, not a claim about
+> running code.
 
 ---
 
@@ -30,6 +31,41 @@ Per-turn input exceeds output by one to two orders of magnitude in every run.
 **Context, not generation, is the dominant token cost.** A parent that performs
 five sub-tasks itself accumulates all five tool transcripts; a parent that
 delegates them carries five summaries.
+
+## What works today
+
+`propose_plan(tasks_json, workspace_root)` -- validates a set of sub-tasks and
+returns an executable plan. Read-only; spawns nothing.
+
+It resolves every declared path and proves it lands inside the workspace
+(after symlink resolution, and against the workspace root rather than the
+process CWD), classifies each task's action tier from a rules table, refuses
+plans where two tasks write the same file or whose read/write dependencies
+form a cycle, groups the rest into waves -- writers before readers -- and
+estimates wall-clock against the 180s deadline.
+
+```
+PLAN b42ddb6e9ebb
+  workspace_root : D:\Projects\subagents-mcp
+  plan_digest    : cf50f7f9cbe1b7dc...
+  tiers          : auto=1, gated=1, never=0
+  schedule       : 2 worker(s) in 1 wave(s), max_parallel=4
+  estimate       : ~70s expected, ~610s worst case
+```
+
+### Running the tests
+
+```bash
+python -m pytest                    # 124 tests, no client needed
+python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
+```
+
+The suite is built around the invariants later phases rest on rather than
+around coverage: the digest is recomputed in subprocesses with differing
+`PYTHONHASHSEED` (an unsorted set would be invisible in-process), a foreign-key
+violation is forced rather than the pragma merely read back, and the stdio
+smoke test is itself tested by injecting `print()` into a copy of the server
+and requiring the smoke run to fail.
 
 ## Required client configuration
 

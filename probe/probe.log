@@ -362,3 +362,9 @@
 2026-09-18 19:47:45,584 | ############################################################
 2026-09-18 19:47:45,584 | probe server starting | pid=14312 | python=3.13.7
 2026-09-18 19:47:45,585 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-19 08:16:42,134 | ############################################################
+2026-09-19 08:16:42,134 | probe server starting | pid=26252 | python=3.13.7
+2026-09-19 08:16:42,134 | log file: D:\Projects\subagents-mcp\probe\probe.log
+2026-09-19 08:17:31,721 | ############################################################
+2026-09-19 08:17:31,721 | probe server starting | pid=10608 | python=3.13.7
+2026-09-19 08:17:31,721 | log file: D:\Projects\subagents-mcp\probe\probe.log
