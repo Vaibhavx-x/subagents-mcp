@@ -8,10 +8,13 @@ lives in `results` behind the handle and is reachable only by asking for it.
 
 from __future__ import annotations
 
+import json
+
 from .execution import ExecutionOutcome
 
 _STATUS_NOTE = {
     "ok": "",
+    "blocked": "never started: an upstream task did not succeed",
     "timeout": "killed at its deadline; partial output stored",
     "failed": "worker reported a failure",
     "unparseable": "worker produced no valid result document",
@@ -37,26 +40,56 @@ def render_execution(outcome: ExecutionOutcome) -> str:
         + (f", {len(outcome.skipped)} skipped (already complete)" if outcome.skipped else ""))
     add("")
 
-    for result in outcome.results:
+    for result in sorted(outcome.results, key=lambda r: r.task_ref):
         note = _STATUS_NOTE.get(result.status, "")
         add(f"[{result.task_ref}] {result.status}" + (f" -- {note}" if note else ""))
         add(f"  {result.summary}")
         usage = _tokens(result)
         if usage:
             add(usage)
+        if result.task_ref in outcome.escalated:
+            add("  retried once on the escalation model")
+        report = outcome.taints.get(result.task_ref)
+        if report is not None and report.tainted:
+            # Named, not counted. "1 path changed" tells a human nothing they
+            # can act on, and this is the only signal that a worker did
+            # something the plan did not describe.
+            add(f"  TAINTED: {report.describe()}")
+            for path in report.paths[:5]:
+                add(f"    {path}")
+            if len(report.paths) > 5:
+                add(f"    ... and {len(report.paths) - 5} more")
+        add("")
+
+    if outcome.blocked:
+        add("BLOCKED (never started):")
+        for task_ref, upstream in outcome.blocked:
+            add(f"  [{task_ref}] depends on {upstream}, which did not succeed")
         add("")
 
     if outcome.skipped:
         add(f"SKIPPED (already complete): {', '.join(outcome.skipped)}")
         add("")
 
+    if outcome.outcome == "cancelled_at_deadline":
+        add("CANCELLED at the client deadline. Finished workers were still")
+        add(f"  recorded -- call collect({outcome.plan_id}) rather than re-running the plan.")
+        return "\n".join(lines)
+
+    tainted = outcome.tainted_refs
+    if tainted:
+        add(f"REVIEW BEFORE TRUSTING: {', '.join(tainted)} changed paths the plan")
+        add("  did not declare. The change was detected, not prevented.")
+        add("")
+
     failed = [r.task_ref for r in outcome.results if not r.ok]
-    if failed:
-        add(f"NOT COMPLETE: {', '.join(failed)}")
+    if failed or outcome.blocked:
+        stuck = failed + [ref for ref, _ in outcome.blocked]
+        add(f"NOT COMPLETE: {', '.join(sorted(stuck))}")
         add("  Re-propose just these task_refs, or fix the instruction and try again.")
-        add("  Full transcripts are stored -- call collect(plan_id) to read them.")
+        add(f"  Full transcripts are stored -- call collect({outcome.plan_id}) to read them.")
     else:
-        add("All workers completed. Full transcripts: collect(plan_id)")
+        add(f"All workers completed. Full transcripts: collect({outcome.plan_id})")
     return "\n".join(lines)
 
 
@@ -84,6 +117,11 @@ def render_collection(plan_id: str, rows: list[dict]) -> str:
             lines.append(usage)
         if row.get("content_bytes"):
             lines.append(f"  transcript: {row['content_bytes']:,} bytes stored")
+        if row.get("tainted"):
+            paths = json.loads(row["tainted_paths"] or "[]")
+            lines.append(f"  TAINTED: {len(paths)} undeclared path(s)")
+            for path in paths[:5]:
+                lines.append(f"    {path}")
         lines.append("")
 
     incomplete = [r["task_ref"] for r in rows if r["status"] != "ok"]

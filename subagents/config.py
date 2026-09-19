@@ -22,6 +22,13 @@ SPAWN_OVERHEAD_S = 10
 # Median wall-clock of a passing benchmark run (58.2s for the default model).
 EXPECTED_WORKER_S = 60
 
+# A rate-limited worker is the provider pushing back, not a bad task, so it is
+# waited out rather than escalated. Bounded: four workers at ~200k input tokens
+# each can genuinely exceed a quota, and retrying that forever is how a fan-out
+# turns into unbounded spend.
+RATE_LIMIT_ATTEMPTS = 3
+RATE_LIMIT_BACKOFF_S = 5
+
 # The client cancels every MCP tool call at this many seconds unless
 # `timeoutSeconds` is set in mcp_config.json. Measured, not documented.
 DEFAULT_TOOL_DEADLINE_S = 180

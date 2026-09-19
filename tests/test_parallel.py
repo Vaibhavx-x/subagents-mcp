@@ -287,3 +287,18 @@ def test_a_progress_callback_that_raises_does_not_fail_the_run(cfg, workspace):
     outcome = run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
                           runner=timing_runner([]), progress=explode))
     assert outcome.outcome == "complete"
+
+
+def test_an_async_progress_callback_is_awaited(cfg, workspace):
+    """The SDK's ctx.report_progress is a coroutine. Calling it without
+    awaiting sends nothing at all and only emits a RuntimeWarning, which is
+    exactly the kind of silence this project keeps finding."""
+    plan = make_plan(cfg, workspace, *independent("a"))
+    seen: list = []
+
+    async def async_progress(done, total, note):
+        seen.append((done, total))
+
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=timing_runner([]), progress=async_progress))
+    assert seen == [(1, 1)]

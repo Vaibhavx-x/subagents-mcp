@@ -173,3 +173,66 @@ def test_a_clean_plan_never_escalates(cfg, workspace):
     outcome = run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
                           runner=timing_runner([])))
     assert outcome.escalated == []
+
+
+# ------------------------------------------------------------- rate limiting
+def test_a_rate_limited_worker_is_waited_out_not_escalated(cfg, workspace, monkeypatch):
+    """A 429 is the provider pushing back, not a task the model got wrong.
+    Escalating would send a MORE expensive request at a quota that just said no.
+    """
+    import subagents.execution as execution
+
+    monkeypatch.setattr(execution, "RATE_LIMIT_BACKOFF_S", 0)
+    plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"], writes=["a.txt"]))
+
+    calls: list = []
+
+    async def runner(task_ref, command, *, timeout_s, cwd, model, env=None):
+        calls.append(model)
+        if len(calls) == 1:
+            return make_result(task_ref, "failed", exit_reason="rate_limited (RESOURCE_EXHAUSTED)")
+        return make_result(task_ref, "ok")
+
+    outcome = run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg, runner=runner))
+
+    assert calls == [cfg.model, cfg.model], "the retry used the escalation model"
+    assert outcome.escalated == []
+    assert outcome.outcome == "complete"
+
+
+def test_rate_limit_retries_are_bounded(cfg, workspace, monkeypatch):
+    """Retrying a quota forever is how a fan-out becomes unbounded spend."""
+    import subagents.execution as execution
+
+    monkeypatch.setattr(execution, "RATE_LIMIT_BACKOFF_S", 0)
+    plan = make_plan(cfg, workspace, task_entry("a", reads=["README.md"], writes=["a.txt"]))
+
+    calls: list = []
+
+    async def runner(task_ref, command, *, timeout_s, cwd, model, env=None):
+        calls.append(model)
+        return make_result(task_ref, "failed", exit_reason="rate_limited (RESOURCE_EXHAUSTED)")
+
+    outcome = run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg, runner=runner))
+
+    assert len(calls) == execution.RATE_LIMIT_ATTEMPTS
+    assert outcome.outcome == "partial"
+
+
+def test_a_rate_limit_is_not_mistaken_for_a_model_failure():
+    """Read off the classified exit_reason, never a grep of the transcript --
+    bench defect D2 was a 429 inside a conversation_id voiding a good run."""
+    from subagents.worker import is_rate_limited
+
+    assert is_rate_limited(make_result("a", "failed",
+                                       exit_reason="rate_limited (RESOURCE_EXHAUSTED)"))
+    assert not is_rate_limited(make_result("a", "failed", exit_reason="agy status ERROR"))
+    assert not is_rate_limited(make_result("a", "ok"))
+
+
+def test_an_exhausted_rate_limit_does_not_then_escalate():
+    """Caught by the bounded-retry test: without this rule a worker that hit a
+    quota three times answered by sending a MORE expensive request at the same
+    quota. Six attempts where the design says three."""
+    limited = make_result("a", "failed", exit_reason="rate_limited (RESOURCE_EXHAUSTED)")
+    assert not should_escalate(limited, None)

@@ -161,7 +161,9 @@ def test_execution_output_is_a_summary_not_a_transcript(cfg, workspace, fake_wor
         "affects": GOOD_SCOPE, "plan_id": plan.plan_id,
         "plan_digest": plan.plan_digest,
     }))
-    assert "collect(plan_id)" in body
+    # The real id, not the parameter name: the parent has to supply it, and
+    # making it copy-pasteable is the difference between one call and two.
+    assert f"collect({plan.plan_id})" in body
     assert len(body) < 2000
 
 

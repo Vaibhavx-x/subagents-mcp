@@ -15,6 +15,7 @@ it is a mistake that stays invisible until a run overruns.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -24,14 +25,21 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import Config
+from .config import RATE_LIMIT_ATTEMPTS, RATE_LIMIT_BACKOFF_S, Config
 from .db import connect, init_db, write_transaction
 from .digest import compute_digest
 from .errors import PlanRefused
 from .hashing import IgnoreSpec, Snapshot, TaintReport, compare, snapshot
 from .models import Task
 from .waves import build_edges
-from .worker import KILL_GRACE_S, WorkerResult, build_command, run_worker, worker_env
+from .worker import (
+    KILL_GRACE_S,
+    WorkerResult,
+    build_command,
+    is_rate_limited,
+    run_worker,
+    worker_env,
+)
 
 log = logging.getLogger("subagents.execution")
 
@@ -360,6 +368,11 @@ def should_escalate(result: WorkerResult, report: TaintReport | None) -> bool:
     """
     if report is not None and report.tainted:
         return False
+    if is_rate_limited(result):
+        # The provider just said no. run_one has already waited it out to the
+        # attempt limit, and escalating would answer a quota refusal by sending
+        # a MORE expensive request at the same quota.
+        return False
     return result.status in ("failed", "unparseable")
 
 
@@ -397,13 +410,20 @@ async def execute(
     # fake worker by patching the module attribute.
     spawn = runner or run_worker
 
-    def report_progress(done: int, total: int, note: str) -> None:
+    async def report_progress(done: int, total: int, note: str) -> None:
         """Progress is decoration, and whether the client renders it at all is
-        still unknown. An execution must never fail because of it."""
+        still unknown. An execution must never fail because of it.
+
+        Awaits the callback when it returns an awaitable: the SDK's
+        `ctx.report_progress` is a coroutine, and calling it without awaiting
+        silently sends nothing while emitting a RuntimeWarning nobody reads.
+        """
         if progress is None:
             return
         try:
-            progress(done, total, note)
+            maybe = progress(done, total, note)
+            if inspect.isawaitable(maybe):
+                await maybe
         except Exception:  # noqa: BLE001 -- a broken client must not lose a run
             log.warning("progress callback failed; continuing", exc_info=True)
 
@@ -432,19 +452,29 @@ async def execute(
     async def run_one(task: Task, wave_index: int, sem: asyncio.Semaphore,
                       model: str | None = None) -> WorkerResult:
         async with sem:
-            log.info("plan %s: starting %s (wave %d)", plan_id, task.task_ref, wave_index)
-            worker_result = await spawn(
-                task.task_ref,
-                build_command(task, stored.workspace_root, config, model),
-                # agy gets its own --print-timeout at worker_timeout_s; ours
-                # fires KILL_GRACE_S later so agy can exit cleanly and still
-                # report token usage. Our kill is the backstop for an agy that
-                # hangs -- a killed process tells us far less.
-                timeout_s=config.worker_timeout_s + KILL_GRACE_S,
-                cwd=stored.workspace_root,
-                model=model or task.model or config.model,
-                env=worker_env(),
-            )
+            for attempt in range(RATE_LIMIT_ATTEMPTS):
+                log.info("plan %s: starting %s (wave %d)", plan_id, task.task_ref, wave_index)
+                worker_result = await spawn(
+                    task.task_ref,
+                    build_command(task, stored.workspace_root, config, model),
+                    # agy gets its own --print-timeout at worker_timeout_s;
+                    # ours fires KILL_GRACE_S later so agy can exit cleanly and
+                    # still report token usage. Our kill is the backstop for an
+                    # agy that hangs -- a killed process tells us far less.
+                    timeout_s=config.worker_timeout_s + KILL_GRACE_S,
+                    cwd=stored.workspace_root,
+                    model=model or task.model or config.model,
+                    env=worker_env(),
+                )
+                if not is_rate_limited(worker_result) or attempt == RATE_LIMIT_ATTEMPTS - 1:
+                    break
+                # The semaphore is deliberately still held while we wait: a
+                # rate limit means the provider wants less traffic, and
+                # releasing the slot would immediately start another worker.
+                delay = RATE_LIMIT_BACKOFF_S * (2 ** attempt)
+                log.warning("plan %s: %s rate limited; waiting %ss (attempt %d/%d)",
+                            plan_id, task.task_ref, delay, attempt + 1, RATE_LIMIT_ATTEMPTS)
+                await asyncio.sleep(delay)
             # shield: a cancellation arriving now must not lose a finished
             # worker's output, which is the whole basis for collect().
             await asyncio.shield(
@@ -511,7 +541,7 @@ async def execute(
                     failed.add(task.task_ref)
 
             waves_done += 1
-            report_progress(waves_done, len(waves),
+            await report_progress(waves_done, len(waves),
                             f"wave {wave_index}: {len(runnable)} worker(s)")
 
             # Escalation runs after the wave, so a retry cannot overlap the
@@ -582,7 +612,7 @@ def collect_plan(config: Config, plan_id: str) -> list[dict]:
         rows = conn.execute(
             "SELECT r.task_ref, r.wave_index, r.status, r.exit_reason, r.tokens_in,"
             " r.tokens_out, r.thinking_tokens, r.cache_read_tokens, r.finished_at,"
-            " res.summary, res.content_bytes"
+            " r.tainted, r.tainted_paths, res.summary, res.content_bytes"
             " FROM runs r LEFT JOIN results res ON res.run_id = r.id"
             " WHERE r.plan_id = ? ORDER BY r.wave_index, r.task_ref",
             (plan_id,),

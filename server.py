@@ -158,7 +158,16 @@ async def execute_plan(
         )
 
     try:
-        outcome = await execute(scope_summary, plan_id, plan_digest, CONFIG)
+        outcome = await execute(
+            scope_summary, plan_id, plan_digest, CONFIG,
+            # Not deprecated (SEP-2577 removed the logging capability, not
+            # this), but whether agy renders it is unverified -- so it is
+            # emitted and never depended on.
+            progress=lambda done, total, note: ctx.report_progress(done, total, note),
+            # The real number read from the client's own config, so an
+            # escalation retry can be refused on arithmetic rather than hope.
+            deadline_s=CLIENT_TIMEOUT.effective_s if CLIENT_TIMEOUT.known else None,
+        )
     except PlanRefused as exc:
         log.warning("execution refused: %s", exc)
         raise ToolError(f"PLAN REFUSED: {exc}") from exc

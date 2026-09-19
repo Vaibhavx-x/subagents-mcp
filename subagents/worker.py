@@ -196,6 +196,16 @@ def classify(agy_status: str) -> tuple[str, str]:
     return "failed", f"agy status {normalised or 'missing'}"
 
 
+def is_rate_limited(result: WorkerResult) -> bool:
+    """Whether this failure is the provider pushing back, not the worker.
+
+    Read off the classified exit_reason rather than re-scanning the transcript:
+    a whole-log grep for 429 is bench defect D2, where a conversation_id
+    containing those digits voided a run that had succeeded.
+    """
+    return result.status == "failed" and (result.exit_reason or "").startswith("rate_limited")
+
+
 def _summarise(response: str, status: str, exit_reason: str) -> str:
     if status == "timeout":
         head = response.strip()[:SUMMARY_CHARS]
