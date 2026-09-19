@@ -11,8 +11,24 @@ even though Phase 1 writes only `plans`.
 
 from __future__ import annotations
 
+import logging
+import random
 import sqlite3
+import time
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
+
+log = logging.getLogger("subagents")
+
+# busy_timeout covers a writer that arrives while another holds the lock. It
+# does NOT cover every case: SQLite returns SQLITE_BUSY immediately, without
+# invoking the busy handler, when a deferred transaction that has already read
+# tries to upgrade to a write and the snapshot has moved on. Starting every
+# write with BEGIN IMMEDIATE removes that case, and the retry below is the
+# backstop for the rest.
+WRITE_ATTEMPTS = 6
+WRITE_BACKOFF_S = 0.05
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plans (
@@ -133,3 +149,44 @@ def init_db(db_path: str | Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.commit()
     return conn
+
+
+def _is_locked(exc: sqlite3.OperationalError) -> bool:
+    text = str(exc).lower()
+    return "locked" in text or "busy" in text
+
+
+@contextmanager
+def write_transaction(db_path: str | Path) -> Iterator[sqlite3.Connection]:
+    """Open a write transaction, retrying while the database is locked.
+
+    Every writer takes the lock up front (BEGIN IMMEDIATE) rather than
+    discovering the contention halfway through, so a retry always happens
+    before anything has been written -- which is what makes retrying safe here.
+    The body is not idempotent (it inserts a results row), so it must never be
+    re-run after a partial write.
+
+    Phase 3 runs a whole wave of workers whose results land at once; until then
+    this path is exercised only by the concurrency tests.
+    """
+    conn = connect(db_path)
+    try:
+        for attempt in range(WRITE_ATTEMPTS):
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                break
+            except sqlite3.OperationalError as exc:
+                if not _is_locked(exc) or attempt == WRITE_ATTEMPTS - 1:
+                    raise
+                delay = WRITE_BACKOFF_S * (2 ** attempt) + random.uniform(0, 0.02)
+                log.warning("database locked, retrying in %.2fs (attempt %d)",
+                            delay, attempt + 1)
+                time.sleep(delay)
+        try:
+            yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()

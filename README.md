@@ -76,7 +76,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 213 tests, no API calls
+python -m pytest                    # 221 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
@@ -86,6 +86,12 @@ Almost everything runs against `tests/fake_worker.py`, a stand-in that emits
 controllable output, so the worker lifecycle is covered without API calls. The
 opt-in suite is the part a fake cannot check: the real command shape, the real
 output schema, and whether a worker actually changes the file.
+
+Two of them are about what happens when things are killed or collide: a
+hard-killed server must take its workers' whole process tree with it (Windows
+only -- the POSIX fallback offers no such guarantee, and the test says so
+rather than pretending), and concurrent writers must all land, since a dropped
+result would not raise, it would silently shorten `collect`.
 
 The suite is built around the invariants later phases rest on rather than
 around coverage: the digest is recomputed in subprocesses with differing

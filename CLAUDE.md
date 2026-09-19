@@ -176,6 +176,15 @@ PRAGMA busy_timeout=5000;
 PRAGMA foreign_keys=ON;   -- OFF BY DEFAULT. Omitting it silently voids every FK.
 ```
 
+Every write goes through `db.write_transaction`, never a bare `connect()` plus
+`INSERT`. It takes the lock up front with **`BEGIN IMMEDIATE`** and retries on
+lock with bounded backoff. Both halves matter: `busy_timeout` does *not* cover
+a deferred transaction that has already read and then tries to upgrade — SQLite
+returns `SQLITE_BUSY` there without ever calling the busy handler — and taking
+the lock first is what makes a retry safe, since nothing has been written yet.
+The body of a write transaction is **not** idempotent (it inserts a `results`
+row); never retry it after a partial write.
+
 There is deliberately **no `approvals` table**: approval happens in the client's
 permission prompt, outside this server's visibility. A row claiming we recorded
 an approval we never observed would be a lie in our own audit trail.

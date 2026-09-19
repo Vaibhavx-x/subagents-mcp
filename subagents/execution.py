@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import Config
-from .db import connect, init_db
+from .db import connect, init_db, write_transaction
 from .digest import compute_digest
 from .errors import PlanRefused
 from .models import Task
@@ -230,8 +230,9 @@ def persist_result(config: Config, plan_id: str, task: Task, wave_index: int,
     cancellation can only return what is already committed.
     """
     run_id = uuid.uuid4().hex[:12]
-    conn = connect(config.db_path)
-    try:
+    # write_transaction, not connect: Phase 3 lands a whole wave of results at
+    # once, and a bare connection discovers the contention mid-statement.
+    with write_transaction(config.db_path) as conn:
         conn.execute(
             "INSERT INTO runs (id, plan_id, task_ref, wave_index, instruction,"
             " declared_reads, declared_writes, model_requested, model_used, status,"
@@ -263,9 +264,6 @@ def persist_result(config: Config, plan_id: str, task: Task, wave_index: int,
             (actual, result.transcript, len(result.transcript.encode("utf-8")),
              result.summary, _now().isoformat()),
         )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 async def execute(
