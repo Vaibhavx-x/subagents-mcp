@@ -41,6 +41,16 @@ DEPTH_ENV_VAR = "SUBAGENTS_DEPTH"
 _RATE_LIMIT_MARKERS = ("rate_limit", "rate limit", "quota", "resource_exhausted")
 _TIMEOUT_MARKERS = ("timeout", "deadline")
 
+# agy prints this to STDERR when its own --print-timeout fires, and still exits
+# 0 with "status": "SUCCESS" on stdout. Measured. Matched against stderr only,
+# never the transcript -- bench defect D2 was a whole-log grep.
+AGY_TIMEOUT_BANNER = "print timeout after"
+
+# Our kill is the backstop, not the primary mechanism. agy's own --print-timeout
+# exits cleanly and still reports token usage, which is strictly better than a
+# killed process, so we give it this many seconds of head start.
+KILL_GRACE_S = 20
+
 
 @dataclass(frozen=True)
 class WorkerResult:
@@ -71,18 +81,20 @@ def _now() -> str:
 
 
 def build_command(task: Task, workspace_root: Path, config: Config, model: str | None = None) -> list[str]:
-    """The invocation shape proven by bench/run.sh across 33 runs.
-
-    `--dangerously-skip-permissions` is deliberately absent. Print mode
-    auto-approves tool calls anyway (measured), so passing it would remove
-    nothing that exists while implying the worker had a guardrail we took off.
-    """
+    """The invocation shape proven by bench/run.sh across 33 runs."""
     return [
         config.agy_path,
         "--model", model or task.model or config.model,
         "--print-timeout", f"{config.worker_timeout_s}s",
         "--add-dir", str(workspace_root),
         "--output-format", "json",
+        # Required, and not the blanket removal of safety it sounds like.
+        # Measured: headless mode auto-APPROVES file tools regardless, but
+        # auto-DENIES the `command` tool -- a worker asked to run tests would
+        # be silently blocked and still report SUCCESS with an empty response.
+        # The human gate is the parent's execute_plan prompt; a worker has no
+        # human to prompt, so denial here is a failure mode, not a safeguard.
+        "--dangerously-skip-permissions",
         "--print", task.instruction,
     ]
 
@@ -188,8 +200,8 @@ def _summarise(response: str, status: str, exit_reason: str) -> str:
     if status == "timeout":
         head = response.strip()[:SUMMARY_CHARS]
         return (
-            f"INCOMPLETE: worker was killed at its deadline ({exit_reason}). "
-            f"Partial output retained." + (f" Last text: {head}" if head else "")
+            f"INCOMPLETE: {exit_reason}. Partial output retained."
+            + (f" Last text: {head}" if head else "")
         )
     if status != "ok":
         return f"FAILED: {exit_reason}"
@@ -237,11 +249,37 @@ def parse_output(task_ref: str, stdout: str, stderr: str, returncode: int | None
 
     agy_status = str(doc.get("status", ""))
     status, exit_reason = classify(agy_status)
+    response = str(doc.get("response", ""))
+
+    # --- SUCCESS is not sufficient. Two measured cases report status SUCCESS,
+    # exit 0, and real token usage while having done nothing at all:
+    #
+    #   * agy's own --print-timeout fires mid-turn. stderr carries
+    #     "[agy] print timeout after Ns with turn in progress".
+    #   * a tool was auto-denied in headless mode (the `command` tool without
+    #     --dangerously-skip-permissions). The JSON carries denied_actions.
+    #
+    # Both leave `response` empty. Taking the status field at face value would
+    # record incomplete work as a success -- precisely the silent failure this
+    # project exists to avoid -- so a worker that produced no answer is never ok.
+    denied = doc.get("denied_actions") or []
+    if status == "ok" and AGY_TIMEOUT_BANNER in stderr:
+        status = "timeout"
+        exit_reason = "agy hit its own --print-timeout mid-turn"
+    elif status == "ok" and denied:
+        names = ", ".join(
+            str(d.get("display_name") or d.get("action")) for d in denied if isinstance(d, dict)
+        )
+        status = "failed"
+        exit_reason = f"worker was blocked: tool permission denied ({names or 'unknown tool'})"
+    elif status == "ok" and not response.strip():
+        status = "failed"
+        exit_reason = "worker reported SUCCESS but produced no answer"
+
     if timed_out:
         status, exit_reason = "timeout", "killed at deadline"
 
     usage = doc.get("usage") or {}
-    response = str(doc.get("response", ""))
 
     def _int(key: str) -> int | None:
         value = usage.get(key)

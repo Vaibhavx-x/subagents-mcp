@@ -24,7 +24,7 @@ from .db import connect, init_db
 from .digest import compute_digest
 from .errors import PlanRefused
 from .models import Task
-from .worker import WorkerResult, build_command, run_worker, worker_env
+from .worker import KILL_GRACE_S, WorkerResult, build_command, run_worker, worker_env
 
 log = logging.getLogger("subagents.execution")
 
@@ -309,7 +309,11 @@ async def execute(
         worker_result = await spawn(
             task.task_ref,
             build_command(task, stored.workspace_root, config),
-            timeout_s=config.worker_timeout_s,
+            # agy gets its own --print-timeout at worker_timeout_s; ours fires
+            # KILL_GRACE_S later so agy can exit cleanly and still report token
+            # usage. Our kill is the backstop for an agy that hangs, not the
+            # primary mechanism -- a killed process tells us far less.
+            timeout_s=config.worker_timeout_s + KILL_GRACE_S,
             cwd=stored.workspace_root,
             model=task.model or config.model,
             env=worker_env(),

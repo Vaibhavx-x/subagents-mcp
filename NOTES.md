@@ -307,3 +307,58 @@ Related, and measured separately: `asyncio.wait_for(proc.communicate(), t)`
 **discards** partial output when it times out. A child that flushed real work
 before hanging yields `b''`. Draining into buffers owned by reader tasks keeps
 it, which is what lets a timed-out worker still return what it managed to do.
+
+## 18. `status: SUCCESS` does not mean the worker did anything
+
+The worker classifier read agy's JSON `status` field and trusted it. Testing
+the timeout and permission paths against real agy found two cases where agy
+exits 0, reports `"status": "SUCCESS"`, returns real token usage, and has done
+nothing at all:
+
+**agy's own `--print-timeout` fires mid-turn:**
+
+```
+stderr: [agy] print timeout after 6s with turn in progress; returning partial output
+stdout: {"status":"SUCCESS","response":"","duration_seconds":2.9,
+         "usage":{"input_tokens":12715,"output_tokens":355,...}}
+```
+
+The requested file was never created.
+
+**A tool was auto-denied in headless mode:**
+
+```
+stderr: jetski: no output produced -- a tool required the "command" permission
+        that headless mode cannot prompt for, so it was auto-denied.
+stdout: {"status":"SUCCESS","response":"",
+         "denied_actions":[{"action":"command","display_name":"RunCommand"}]}
+```
+
+Both would have been recorded as successful workers. A parent would have been
+told the sub-task was done.
+
+The fix is a rule rather than more pattern matching: **a worker that produced no
+answer did not succeed, whatever the status field says.** `denied_actions` and
+the stderr banner then explain *why*, and the banner is matched against stderr
+only — scoped the same way the D2 fix was, so a worker whose answer discusses
+"print timeout" is not reclassified.
+
+*Lesson kept: a success field is a claim, not evidence. Check the work.*
+
+## 19. `--dangerously-skip-permissions` is required for workers, and my earlier
+reading of it was wrong
+
+Entry 15 concluded that print mode "auto-approves regardless", making the flag
+pointless. That was true of the **file** tools I happened to test, and false in
+general: the `command` tool is auto-**denied** in headless mode without it.
+
+So a worker asked to run tests, a build, or git would be silently blocked — and
+per entry 18, would report SUCCESS anyway.
+
+Workers therefore pass the flag. It is not the blanket removal of safety the
+name suggests: a worker has no human attached, so a permission prompt there
+cannot be answered and a denial is a failure mode rather than a safeguard. The
+human gate is the parent's `execute_plan` prompt, which is unaffected.
+
+*Lesson kept: "I tested the flag" meant "I tested one tool class". The
+generalisation was mine, not the measurement's.*

@@ -237,15 +237,92 @@ def test_build_command_has_the_proven_shape(cfg, workspace):
     assert f"{cfg.worker_timeout_s}s" in cmd
 
 
-def test_build_command_omits_dangerously_skip_permissions(cfg, workspace):
-    """Print mode auto-approves anyway; passing it would imply a guardrail
-    was removed that never existed."""
+def test_build_command_passes_dangerously_skip_permissions(cfg, workspace):
+    """Required, and not the blanket removal of safety it sounds like.
+
+    Measured against real agy: headless mode auto-APPROVES file tools whether
+    or not this flag is present, but auto-DENIES the `command` tool without
+    it -- and then still reports status SUCCESS with an empty response and a
+    `denied_actions` entry. A worker asked to run tests would be silently
+    blocked while appearing to succeed.
+
+    A worker has no human to prompt, so a denial here is a failure mode rather
+    than a safeguard. The human gate is the parent's execute_plan prompt.
+    """
     from conftest import make_task
 
-    assert "--dangerously-skip-permissions" not in build_command(make_task("a"), workspace, cfg)
+    assert "--dangerously-skip-permissions" in build_command(make_task("a"), workspace, cfg)
 
 
 def test_worker_env_carries_the_depth_marker():
     env = worker_env()
     assert env[DEPTH_ENV_VAR] == "1"
     assert "PATH" in env, "the worker needs PATH to reach other tools and MCP servers"
+
+
+# ------------------------------------------------- SUCCESS that isn't
+# Three measured cases where agy exits 0 with status SUCCESS having done
+# nothing. Taking the status field at face value would record incomplete work
+# as a success, which is the precise failure this project exists to avoid.
+
+def _doc(**over) -> str:
+    import json as _json
+
+    base = {
+        "conversation_id": "abc", "status": "SUCCESS", "response": "did the thing",
+        "duration_seconds": 2.9, "num_turns": 1,
+        "usage": {"input_tokens": 12715, "output_tokens": 355,
+                  "thinking_tokens": 239, "cache_read_tokens": 0},
+    }
+    base.update(over)
+    return _json.dumps(base)
+
+
+def test_agy_own_print_timeout_is_not_a_success():
+    """agy emits status SUCCESS with an empty response when its own
+    --print-timeout fires; the banner is on stderr."""
+    result = parse_output(
+        "t", _doc(response=""),
+        "[agy] print timeout after 6s with turn in progress; returning partial output",
+        0, "m", "s", "f", timed_out=False,
+    )
+    assert result.status == "timeout"
+    assert "own --print-timeout" in result.exit_reason
+    assert "INCOMPLETE" in result.summary
+
+
+def test_denied_tool_permission_is_not_a_success():
+    """Without --dangerously-skip-permissions the `command` tool is auto-denied
+    in headless mode, and agy still reports SUCCESS."""
+    result = parse_output(
+        "t", _doc(response="", denied_actions=[{"action": "command", "display_name": "RunCommand"}]),
+        "jetski: no output produced -- a tool required the \"command\" permission",
+        0, "m", "s", "f", timed_out=False,
+    )
+    assert result.status == "failed"
+    assert "RunCommand" in result.exit_reason
+    assert "blocked" in result.exit_reason
+
+
+def test_success_with_no_answer_is_not_a_success():
+    """A worker that produced nothing did not succeed, whatever status says."""
+    result = parse_output("t", _doc(response="   "), "", 0, "m", "s", "f", timed_out=False)
+    assert result.status == "failed"
+    assert "no answer" in result.exit_reason
+
+
+def test_a_real_success_is_still_ok():
+    """The hardening must not turn genuine successes into failures."""
+    result = parse_output("t", _doc(), "", 0, "m", "s", "f", timed_out=False)
+    assert result.ok and result.exit_reason == "success"
+    assert result.tokens_in == 12715
+
+
+def test_timeout_banner_is_matched_on_stderr_only():
+    """Scoped like the D2 fix: a worker discussing timeouts in its own answer
+    must not be reclassified."""
+    result = parse_output(
+        "t", _doc(response="I fixed the print timeout after the retry loop."),
+        "", 0, "m", "s", "f", timed_out=False,
+    )
+    assert result.ok, result.exit_reason
