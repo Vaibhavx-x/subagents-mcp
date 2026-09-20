@@ -191,3 +191,126 @@ def test_a_generous_budget_still_uses_the_benchmark_median():
 
     e = estimate_plan([[make_task("a")]], max_parallel=4, worker_timeout_s=600)
     assert e.expected_s == EXPECTED_WORKER_S + SPAWN_OVERHEAD_S
+
+
+# ------------------------------------------------- p90 from this install's history
+def seed_runs(cfg, durations, status="ok"):
+    """Write finished runs straight into the database, bypassing execution."""
+    import json
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    from subagents.db import init_db, write_transaction
+
+    init_db(cfg.db_path).close()
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    with write_transaction(cfg.db_path) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO plans (id, plan_digest, workspace_root, plan_json,"
+            " wave_count, estimated_wall_s, worst_case_wall_s, created_at, expires_at, status)"
+            " VALUES ('p1','d','w','{}',1,1,1,'t','t','complete')"
+        )
+        for index, seconds in enumerate(durations):
+            started = base + timedelta(hours=index)
+            conn.execute(
+                "INSERT INTO runs (id, plan_id, task_ref, wave_index, instruction,"
+                " declared_reads, declared_writes, status, started_at, finished_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (uuid.uuid4().hex[:12], "p1", f"t{index}", 0, "x",
+                 json.dumps([]), json.dumps([]), status,
+                 started.isoformat(), (started + timedelta(seconds=seconds)).isoformat()),
+            )
+
+
+def test_a_fresh_install_falls_back_to_the_benchmark_constant(cfg):
+    """Nothing about this behaviour changes until there is history worth using."""
+    from subagents.estimate import observed_worker_s
+
+    assert observed_worker_s(cfg.db_path) is None
+
+
+def test_too_few_samples_is_not_enough(cfg):
+    """Nine runs say more about which nine tasks happened than about the work."""
+    from subagents.estimate import MINIMUM_SAMPLES, observed_worker_s
+
+    seed_runs(cfg, [20.0] * (MINIMUM_SAMPLES - 1))
+    assert observed_worker_s(cfg.db_path) is None
+
+
+def test_enough_samples_gives_the_p90(cfg):
+    from subagents.estimate import observed_worker_s
+
+    # 1..20 seconds: nearest-rank p90 of twenty values is the 18th, which is 18.
+    seed_runs(cfg, [float(n) for n in range(1, 21)])
+    seconds, samples = observed_worker_s(cfg.db_path)
+    assert samples == 20
+    assert seconds == 18
+
+
+def test_p90_is_not_the_median(cfg):
+    """The two errors are asymmetric: underestimating cancels a plan mid-flight,
+    overestimating prints a note nobody minds."""
+    import statistics
+
+    from subagents.estimate import observed_worker_s
+
+    # Nearest-rank p90 of twenty samples is the 18th, so the tail has to be
+    # wider than two values for the statistic to differ from the median at all.
+    durations = [10.0] * 15 + [100.0] * 5
+    seed_runs(cfg, durations)
+    seconds, _ = observed_worker_s(cfg.db_path)
+    assert statistics.median(durations) == 10.0
+    assert seconds == 100, "p90 must reach into the slow tail, not sit at the median"
+
+
+def test_timed_out_workers_are_excluded(cfg):
+    """A timed-out worker ran for exactly its budget. Feeding those back in
+    makes the estimator predict its own configuration rather than the work."""
+    from subagents.estimate import observed_worker_s
+
+    seed_runs(cfg, [600.0] * 20, status="timeout")
+    assert observed_worker_s(cfg.db_path) is None, "timeouts must not count as history"
+
+
+def test_failed_workers_are_excluded(cfg):
+    from subagents.estimate import observed_worker_s
+
+    seed_runs(cfg, [3.0] * 20, status="failed")
+    assert observed_worker_s(cfg.db_path) is None
+
+
+def test_the_estimate_uses_local_history_when_it_exists(cfg, workspace):
+    from conftest import make_task
+
+    from subagents.estimate import estimate_plan
+
+    seed_runs(cfg, [float(n) for n in range(1, 21)])
+    local = estimate_plan([[make_task("a")]], max_parallel=4,
+                          worker_timeout_s=600, db_path=cfg.db_path)
+    default = estimate_plan([[make_task("a")]], max_parallel=4, worker_timeout_s=600)
+
+    assert local.expected_s != default.expected_s
+    assert "p90 of 20 local run(s)" in local.expected_source
+    assert "benchmark median" in default.expected_source
+
+
+def test_the_source_of_the_estimate_is_stated(cfg, workspace):
+    """An estimate whose provenance is invisible is one nobody can challenge."""
+    from conftest import tasks_json, task_entry
+    from subagents.planning import propose, render
+
+    seed_runs(cfg, [float(n) for n in range(1, 21)])
+    plan = propose(tasks_json(task_entry("a", reads=["README.md"])), str(workspace), cfg)
+    assert "p90 of 20 local run(s)" in render(plan)
+
+
+def test_a_local_p90_is_still_capped_by_the_worker_budget(cfg, workspace):
+    """NOTES §24: expected must never exceed the worst case."""
+    from conftest import make_task
+
+    from subagents.estimate import estimate_plan
+
+    seed_runs(cfg, [500.0] * 20)
+    e = estimate_plan([[make_task("a")]], max_parallel=4,
+                      worker_timeout_s=30, db_path=cfg.db_path)
+    assert e.expected_s <= e.worst_case_s

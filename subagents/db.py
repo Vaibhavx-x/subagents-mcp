@@ -15,6 +15,7 @@ import logging
 import random
 import sqlite3
 import time
+from datetime import datetime
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -190,3 +191,44 @@ def write_transaction(db_path: str | Path) -> Iterator[sqlite3.Connection]:
             raise
     finally:
         conn.close()
+
+
+def completed_worker_durations(db_path: str | Path, limit: int = 200) -> list[float]:
+    """Wall-clock seconds for workers that actually finished, newest first.
+
+    `ok` only, and the reason is not fussiness. A timed-out worker ran for
+    exactly its budget, so feeding those back into an estimate makes the
+    estimate converge on whatever the timeout happens to be -- the estimator
+    would end up predicting its own configuration rather than the work.
+
+    SQL lives here because every other query does; the policy about what to do
+    with these numbers lives in estimate.py.
+    """
+    path = Path(db_path)
+    if not path.is_file():
+        return []
+    conn = connect(path)
+    try:
+        rows = conn.execute(
+            "SELECT started_at, finished_at FROM runs"
+            " WHERE status = 'ok' AND started_at IS NOT NULL AND finished_at IS NOT NULL"
+            " ORDER BY finished_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # No schema yet: a fresh install has no history and that is not an error.
+        return []
+    finally:
+        conn.close()
+
+    out: list[float] = []
+    for started, finished in rows:
+        try:
+            seconds = (
+                datetime.fromisoformat(finished) - datetime.fromisoformat(started)
+            ).total_seconds()
+        except (TypeError, ValueError):
+            continue
+        if seconds > 0:
+            out.append(seconds)
+    return out

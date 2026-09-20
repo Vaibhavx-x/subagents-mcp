@@ -153,6 +153,7 @@ def propose(
         max_parallel=config.max_parallel,
         worker_timeout_s=config.worker_timeout_s,
         client_timeout=client_timeout,
+        db_path=config.db_path,
     )
 
     warnings: list[str] = []
@@ -241,6 +242,7 @@ def render(plan: ProposedPlan) -> str:
         f"  estimate       : ~{plan.estimate.expected_s}s expected, "
         f"~{plan.estimate.worst_case_s}s worst case"
     )
+    add(f"                   (expected from {plan.estimate.expected_source})")
     add(f"  {plan.estimate.deadline_note}")
     add("")
 

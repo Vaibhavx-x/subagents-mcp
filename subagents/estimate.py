@@ -18,10 +18,21 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from .client_config import DEFAULT_DEADLINE_S, ClientTimeout
 from .config import EXPECTED_WORKER_S, SPAWN_OVERHEAD_S
+from .db import completed_worker_durations
 from .models import Task
+
+# Below this many finished workers the local history says more about which
+# three tasks happened to run than about how long work takes here.
+MINIMUM_SAMPLES = 10
+
+# p90 rather than the median, because the two errors are not symmetric:
+# underestimating gets a plan cancelled at the client deadline mid-flight,
+# overestimating prints a note nobody minds.
+ESTIMATE_PERCENTILE = 0.9
 
 
 @dataclass(frozen=True)
@@ -36,6 +47,9 @@ class Estimate:
     deadline_known: bool
     config_path: str = ""
     server_name: str = ""
+    # Where expected_s came from. An estimate whose provenance is invisible is
+    # one nobody can challenge.
+    expected_source: str = "benchmark median, no local history"
 
     @property
     def fits_deadline(self) -> bool:
@@ -103,6 +117,26 @@ class Estimate:
         )
 
 
+def percentile(values: list[float], fraction: float) -> float:
+    """Nearest-rank percentile. No interpolation, no numpy."""
+    ordered = sorted(values)
+    index = max(0, math.ceil(fraction * len(ordered)) - 1)
+    return ordered[index]
+
+
+def observed_worker_s(db_path: str | Path,
+                      *, minimum_samples: int = MINIMUM_SAMPLES) -> tuple[int, int] | None:
+    """(seconds, sample count) from this install's own finished workers.
+
+    Returns None when there is not enough history, so a fresh install behaves
+    exactly as it did before this existed.
+    """
+    durations = completed_worker_durations(db_path)
+    if len(durations) < minimum_samples:
+        return None
+    return math.ceil(percentile(durations, ESTIMATE_PERCENTILE)), len(durations)
+
+
 def _wave_cost(size: int, per_worker_s: int, max_parallel: int) -> int:
     batches = math.ceil(size / max_parallel) if size else 0
     return batches * (per_worker_s + SPAWN_OVERHEAD_S)
@@ -114,9 +148,21 @@ def estimate_plan(
     max_parallel: int,
     worker_timeout_s: int,
     client_timeout: ClientTimeout | None = None,
+    db_path: str | Path | None = None,
 ) -> Estimate:
     if max_parallel < 1:
         max_parallel = 1
+
+    # This install's own p90 beats a benchmark median measured on someone
+    # else's machine against someone else's tasks. Measured 2026-09-20: the
+    # constant was 60s and the p90 over 20 real runs was 29s.
+    expected_source = "benchmark median, no local history"
+    base_expected = EXPECTED_WORKER_S
+    if db_path is not None:
+        observed = observed_worker_s(db_path)
+        if observed is not None:
+            base_expected, samples = observed
+            expected_source = f"p90 of {samples} local run(s)"
 
     # A worker cannot run longer than its own deadline, so the expected figure
     # is capped by it. Without the cap, a short worker_timeout produces the
@@ -124,7 +170,7 @@ def estimate_plan(
     # worst case" -- an expectation exceeding the ceiling that makes it
     # impossible. EXPECTED_WORKER_S is a benchmark median and knows nothing
     # about the budget it is being spent under.
-    per_worker_expected = min(EXPECTED_WORKER_S, worker_timeout_s)
+    per_worker_expected = min(base_expected, worker_timeout_s)
 
     expected = sum(_wave_cost(len(w), per_worker_expected, max_parallel) for w in waves)
     worst = sum(_wave_cost(len(w), worker_timeout_s, max_parallel) for w in waves)
@@ -140,4 +186,5 @@ def estimate_plan(
         deadline_known=bool(client_timeout and client_timeout.known),
         config_path=str(client_timeout.config_path) if client_timeout else "",
         server_name=client_timeout.server_name or "" if client_timeout else "",
+        expected_source=expected_source,
     )
