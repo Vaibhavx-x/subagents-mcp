@@ -1,0 +1,35 @@
+[
+  {
+    "label": "no flag",
+    "skip_permissions": false,
+    "elapsed_s": 19.1,
+    "agy_status": "SUCCESS",
+    "denied_actions": [
+      {
+        "action": "mcp",
+        "display_name": "CallMcpTool"
+      }
+    ],
+    "response_chars": 0,
+    "input_tokens": 39949,
+    "plans_created": 0,
+    "plans_executed": 0,
+    "file_written": false,
+    "stderr_tail": "jetski: no output produced \u00e2\u20ac\u201d a tool required the \"mcp\" permission that headless mode cannot prompt for, so it was auto-denied. Add an allow-rule under permissions.allow in settings.json (e.g. mcp(<target>)). Alternatively, re-run with --dangerously-skip-permissions to auto-approve all tools.\n",
+    "verdict": "REFUSED -- propose_plan never ran"
+  },
+  {
+    "label": "--dangerously-skip-permissions",
+    "skip_permissions": true,
+    "elapsed_s": 29.3,
+    "agy_status": "SUCCESS",
+    "denied_actions": [],
+    "response_chars": 645,
+    "input_tokens": 70559,
+    "plans_created": 1,
+    "plans_executed": 1,
+    "file_written": true,
+    "stderr_tail": "",
+    "verdict": "OK -- both tools ran and the worker did the work"
+  }
+]

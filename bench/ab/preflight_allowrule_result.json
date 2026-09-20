@@ -1,0 +1,21 @@
+[
+  {
+    "label": "['mcp(subagents/propose_plan)', 'mcp(subagents/execute_plan)', 'mcp(subagents/collect)']",
+    "skip_permissions": false,
+    "elapsed_s": 29.7,
+    "agy_status": "SUCCESS",
+    "denied_actions": [],
+    "response_chars": 459,
+    "input_tokens": 56003,
+    "plans_created": 1,
+    "plans_executed": 1,
+    "file_written": true,
+    "stderr_tail": "",
+    "verdict": "OK -- both tools ran and the worker did the work",
+    "rules": [
+      "mcp(subagents/propose_plan)",
+      "mcp(subagents/execute_plan)",
+      "mcp(subagents/collect)"
+    ]
+  }
+]

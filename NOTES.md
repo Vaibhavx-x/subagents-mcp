@@ -670,3 +670,56 @@ three extra.
 *Lesson kept: "escalation happens after the wave so a retry cannot pollute the
 snapshot" was a correct reason for a decision whose consequence I never
 followed through. The comment explained the choice and hid the gap.*
+
+## 31. MCP tools are auto-DENIED in headless mode -- and there is a narrow escape
+
+Phase 4 needs a parent measured with and without the server, which means a
+parent running under `--print`. Entry 19 established that headless agy
+auto-approves file tools and auto-denies the `command` tool. MCP tools had
+never been tested, and the whole experiment depended on the answer.
+
+Probed. They are **denied**, and the denial wears the same disguise as every
+other failure in this project:
+
+```
+status: SUCCESS   response: ""   input_tokens: 39,949
+denied_actions: [{"action": "mcp", "display_name": "CallMcpTool"}]
+```
+
+Forty thousand tokens spent, nothing done, `SUCCESS` reported. Our own §6b rule
+catches this shape for workers; here it was the *parent*, and no rule of ours
+was watching.
+
+The stderr, which is where agy keeps the useful half of its output:
+
+> a tool required the "mcp" permission that headless mode cannot prompt for,
+> so it was auto-denied. Add an allow-rule under permissions.allow in
+> settings.json (e.g. mcp(<target>)). Alternatively, re-run with
+> --dangerously-skip-permissions to auto-approve all tools.
+
+Two escapes, and the hint does not say what `<target>` is. Tried the plausible
+spellings; the **most specific one works**:
+
+```json
+{ "permissions": { "allow": [
+    "mcp(subagents/propose_plan)",
+    "mcp(subagents/execute_plan)",
+    "mcp(subagents/collect)"
+] } }
+```
+
+in `~/.gemini/antigravity-cli/settings.json`. That matters beyond the
+measurement: someone automating this server does **not** have to hand every
+tool a blank cheque with `--dangerously-skip-permissions`. They can allow
+exactly these three and leave every other gate standing. It belongs in the
+README, because the alternative a user would otherwise find is the sledgehammer.
+
+The A/B harness still uses `--dangerously-skip-permissions` uniformly across
+all three arms -- identical invocation is what keeps the arms comparable, file
+tools are auto-approved headlessly either way, and a fifteen-minute measurement
+should not be mutating a global settings file it might crash halfway through.
+Disclosed in the results rather than buried.
+
+*Lesson kept: the gating unknown took one probe and twenty seconds. I had
+listed three possible outcomes for it and the real answer was a fourth, printed
+on stderr by the tool itself.*

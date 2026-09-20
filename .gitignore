@@ -31,3 +31,6 @@ ZUDDL.md
 
 # Internal planning / strategy docs — kept locally, not part of the public repo.
 CONTEXT.md
+
+# A/B measurement scratch workspaces, materialised per run.
+bench/ab/work/

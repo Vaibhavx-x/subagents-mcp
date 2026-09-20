@@ -206,6 +206,28 @@ the configured deadline (a real number) rather than betting on a median.
 > accepted silently rather than rejected. A typo here does not produce an error,
 > it produces a setting that never takes effect. Verify behaviour, not syntax.
 
+### Running the parent headlessly
+
+`agy --print` **auto-denies MCP tool calls**, because headless mode has no
+human to prompt — and it reports `status: SUCCESS` with an empty response while
+doing it, so the failure is silent. Automating against this server therefore
+needs one of two things.
+
+The narrow one, in `~/.gemini/antigravity-cli/settings.json`:
+
+```json
+{ "permissions": { "allow": [
+    "mcp(subagents/propose_plan)",
+    "mcp(subagents/execute_plan)",
+    "mcp(subagents/collect)"
+] } }
+```
+
+The blunt one is `--dangerously-skip-permissions`, which hands **every** tool a
+blank cheque. Prefer the allow-rule: it opens exactly these three tools and
+leaves every other gate standing. Measured 2026-09-20, `NOTES.md` §31 — the
+per-tool spelling is the one that works.
+
 ## Where the approval gate is
 
 **The approval gate is the client's tool-permission prompt, which fires before
