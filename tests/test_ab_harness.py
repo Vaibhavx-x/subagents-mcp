@@ -320,3 +320,30 @@ def test_a_document_mentioning_a_base_less_class_verifies(tmp_path):
         )
     _, ok, problems = verify(root)
     assert ok, problems
+
+
+# --------------------------------------------------- honesty about small samples
+def test_overlapping_ranges_are_not_reported_as_an_effect():
+    """A median of three invites exactly this trap: two arms whose runs are
+    interleaved still produce different medians, and the difference reads as a
+    finding unless something checks whether the ranges separate at all."""
+    from aggregate import delta_verdict, overlaps
+
+    assert overlaps((78000, 99000), (65000, 91000))
+    assert not overlaps((78000, 99000), (34000, 64000))
+
+    summary = {
+        "A": {"parent_in_spread": (78000, 99000)},
+        "B": {"parent_in_spread": (65000, 91000)},
+        "C": {"parent_in_spread": (34000, 64000)},
+    }
+    assert "variance" in delta_verdict(summary, "A", "B")
+    assert "do not overlap" in delta_verdict(summary, "A", "C")
+
+
+def test_a_missing_spread_is_treated_as_overlapping():
+    """No data is not evidence of separation."""
+    from aggregate import overlaps
+
+    assert overlaps(None, (1, 2))
+    assert overlaps((1, 2), None)

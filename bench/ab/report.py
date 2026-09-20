@@ -13,7 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).parent))
 
-from aggregate import ARMS, deltas, read_rows, summarise  # noqa: E402
+from aggregate import ARMS, delta_verdict, deltas, read_rows, summarise  # noqa: E402
 from harness import MODULES  # noqa: E402
 
 RUNS = REPO / "bench" / "ab" / "runs.csv"
@@ -60,14 +60,32 @@ def build(rows: list[dict]) -> str:
     add("")
 
     add("## The two numbers the three arms exist to separate\n")
-    add(f"- **Registration toll (B − A): {n(delta['toll'])} parent input tokens.** What the "
-        "tool schemas and `instructions.md` cost on every turn, before any work happens.")
-    add(f"- **Delegation saving (B − C): {n(delta['saving'])} parent input tokens.** What "
-        "the parent stops carrying once the work moves to workers.")
-    add(f"- **Net (A − C): {n(delta['net'])}.** A two-arm test would report only this and "
-        "could not say which half dominates.")
+    add("Each difference is reported with whether the arms' observed ranges actually "
+        "separate. Three runs per arm supports no meaningful significance test, but "
+        "overlapping ranges are enough to say a difference is not measurable -- and "
+        "saying so is the entire reason the spread column exists.\n")
+
+    toll_verdict = delta_verdict(summary, "A", "B")
+    save_verdict = delta_verdict(summary, "B", "C")
+    net_verdict = delta_verdict(summary, "A", "C")
+
+    add(f"- **Registration toll (B - A): {n(delta['toll'])} parent input tokens** -- "
+        f"*{toll_verdict}.*")
+    if "variance" in toll_verdict:
+        add("")
+        add("  Registering the server was expected to COST the parent context: the tool "
+            "schemas and `instructions.md` load on every turn. This measurement cannot see "
+            "that cost at this sample size, and the sign came out negative. That is a "
+            "result about the noise floor, not evidence that registration is free. "
+            "**Do not quote it as a saving.**")
+        add("")
+    add(f"- **Delegation saving (B - C): {n(delta['saving'])} parent input tokens** -- "
+        f"*{save_verdict}.*")
+    add(f"- **Net (A - C): {n(delta['net'])} parent input tokens** -- *{net_verdict}.* "
+        "A two-arm test would report only this number and could not say which half of it "
+        "is registration and which is delegation.")
     if delta.get("parent_ratio"):
-        add(f"- The delegating parent carried **{delta['parent_ratio']:.2f}x less** input "
+        add(f"- The delegating parent carried **{delta['parent_ratio']:.2f}x less input** "
             "than the solo parent.")
     add("")
 

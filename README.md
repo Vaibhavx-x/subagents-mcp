@@ -20,17 +20,33 @@ and a handle. `collect` reads results back, **including after a timeout**.
 
 ## Why
 
-Measured across 33 benchmark runs (`bench/RESULTS.md`):
+Per-turn input exceeds output by one to two orders of magnitude in every one of
+33 benchmark runs (`bench/RESULTS.md`): 110,323–305,321 input against
+988–15,851 output. **Context, not generation, is the dominant token cost.**
 
-| | min | max |
-|---|---|---|
-| **input tokens / turn** | **110,323** | **305,321** |
-| output tokens / turn | 988 | 15,851 |
+So the question is whether delegating actually reduces it. Measured over nine
+runs of the same four-module documentation task (`bench/ab/RESULTS.md`):
 
-Per-turn input exceeds output by one to two orders of magnitude in every run.
-**Context, not generation, is the dominant token cost.** A parent that performs
-five sub-tasks itself accumulates all five tool transcripts; a parent that
-delegates them carries five summaries.
+| arm | parent input (median) | spread | total input |
+|---|---|---|---|
+| **A · solo** — no server | **98,304** | 78,114–99,582 | 98,304 |
+| **B · registered** — server present, not used | 76,412 | 65,566–91,399 | 76,412 |
+| **C · delegating** | **47,830** | 34,438–64,160 | **218,744** |
+
+**The delegating parent carried 2.06x less input**, and the A and C ranges do
+not overlap. It also produced 6x less output (1,185 against 7,166) and read a
+tenth as much from cache.
+
+Two things that table says which a friendlier one would not:
+
+- **Delegation cost 2.23x the total tokens.** Four workers each re-read context
+  the parent already had. The claim here is about the **parent's context
+  window** — the thing that fills up and forces a compaction — not about total
+  spend, which goes up.
+- **The registration toll (B − A) came out negative and is not a finding.** The
+  A and B ranges overlap almost entirely, so at three runs per arm the cost of
+  loading tool schemas every turn is simply below the noise floor. It is
+  reported as unmeasured rather than as a benefit.
 
 ## What works today
 

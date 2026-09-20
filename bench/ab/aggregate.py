@@ -105,3 +105,24 @@ def deltas(summary: dict) -> dict:
     if total_a and total_c:
         out["total_cost_ratio"] = total_c / total_a
     return out
+
+
+def overlaps(first: tuple[float, float] | None, second: tuple[float, float] | None) -> bool:
+    """Do two min-max ranges overlap?
+
+    With three runs per arm there is no meaningful significance test, but there
+    is one thing worth asking that costs nothing: do the observed ranges even
+    separate? If they do not, the difference between the medians is
+    indistinguishable from run-to-run variance and must not be reported as an
+    effect -- which is exactly the trap a median of three invites.
+    """
+    if not first or not second:
+        return True
+    return first[0] <= second[1] and second[0] <= first[1]
+
+
+def delta_verdict(summary: dict, left: str, right: str) -> str:
+    """How a difference between two arms may honestly be described."""
+    if overlaps(summary[left]["parent_in_spread"], summary[right]["parent_in_spread"]):
+        return "within run-to-run variance -- the observed ranges overlap"
+    return "ranges do not overlap"
