@@ -723,3 +723,89 @@ Disclosed in the results rather than buried.
 *Lesson kept: the gating unknown took one probe and twenty seconds. I had
 listed three possible outcomes for it and the real answer was a fourth, printed
 on stderr by the tool itself.*
+
+## 32. The registration toll came out negative, which is a fact about noise
+
+The three-arm A/B exists to separate two costs: what registering the server
+takes from the parent's context before any work happens (schemas plus
+`instructions.md`, loaded every turn), and what delegation then gives back.
+
+Nine runs later:
+
+```
+A solo        98,304 parent input   (78,114-99,582)
+B registered  76,412                (65,566-91,399)
+C delegating  47,830                (34,438-64,160)
+```
+
+B - A = **-21,892**. Registering a server cannot reduce the parent's context.
+The A and B ranges overlap across almost their whole width, so this is the
+noise floor and nothing else -- agy's per-turn input varies enormously, which
+the original bench already found (110k-305k).
+
+The temptation was real: the number looks like a second finding, and "the
+schemas are free" would have been a nicer sentence than "we cannot measure it".
+The report now computes range overlap for every delta and prints *within
+run-to-run variance* with an explicit **do not quote this as a saving**.
+
+What the same nine runs DO support: A and C do not overlap at all (78,114 floor
+against a 64,160 ceiling). The delegating parent carried 2.06x less input, and
+that one is a measurement.
+
+*Lesson kept: three runs produce a median, and a median always looks like a
+result. The spread is what says whether it is one -- which is why the spread
+column is printed next to every median rather than kept in a footnote.*
+
+## 33. Delegation costs 2.23x the total tokens, and that belongs in the README
+
+The same runs, counting everything rather than only the parent:
+
+| arm | parent input | worker input | total |
+|---|---|---|---|
+| A solo | 98,304 | 0 | 98,304 |
+| C delegating | 47,830 | 170,914 | **218,744** |
+
+Four workers each re-read context the parent already held. **Total spend more
+than doubles.**
+
+This was predictable and is still worth stating plainly, because the project's
+pitch -- "keeps the parent's context clean" -- is easy to read as "cheaper",
+and it is not. What delegation buys is headroom in the window that actually
+fills up and forces a compaction, paid for in tokens elsewhere. A reader who
+discovers that ratio themselves after adopting the tool would be right to
+distrust everything else in the README.
+
+*Lesson kept: the caveats were written into the report generator before the
+numbers existed, which is the only reason this one survived contact with a
+table I wanted to look good.*
+
+## 34. A dry run caught the bug that would have voided every measurement
+
+Before spending a token, the A/B harness was rehearsed end to end against a
+fake parent (`tests/fake_agy.py`). Arms A and B both came back **void**:
+
+```
+work not verified: worker.md names none of its module's definitions;
+execution.md names none of its module's definitions; ...
+```
+
+The verifier checks that a document mentions at least one symbol its module
+actually defines -- cheap evidence the file was read rather than the prose
+invented. It extracted those symbols with string surgery:
+
+```python
+line.split("(")[0].removeprefix("def ").removeprefix("class ").strip()
+```
+
+For `def build_command(task, ...)` that yields `build_command`. For a base-less
+class declaration -- `class WorkerResult:` -- there is no bracket to split on,
+so it yields **`WorkerResult:`**, with the colon. No prose ever written
+contains that string.
+
+Every real run would have voided, the measurement would have produced zero
+usable rows, and the cause would have looked like the workers failing rather
+than the verifier being wrong.
+
+*Lesson kept: the rehearsal cost two seconds and a fake process. The bug it
+caught would have cost the entire measurement and, worse, might have been read
+as a finding about the model.*
