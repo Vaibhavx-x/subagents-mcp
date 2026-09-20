@@ -108,3 +108,25 @@ def test_collect_of_a_blocked_task_explains_itself():
     text = render_collection("p1", rows)
     assert "never started" in text
     assert "depends on writer" in text
+
+
+def test_a_declared_write_that_never_changed_is_called_out():
+    """Not taint, and not something the status field catches: agy reports
+    SUCCESS with a plausible answer while never touching the file. The target
+    being byte-identical afterwards is the only evidence."""
+    report = TaintReport(task_ref="a", attribution="task",
+                         writes_unchanged=[r"d:\ws\out.txt"])
+    text = render_execution(outcome(taints={"a": report}))
+    assert "declared but unchanged" in text
+    assert "out.txt" in text
+
+
+def test_an_unchanged_write_is_not_reported_for_a_failed_worker():
+    """Of course it did not write the file -- it failed. Saying so twice is
+    noise that buries the actual reason."""
+    failed = make_result("a", "failed")
+    report = TaintReport(task_ref="a", attribution="task",
+                         writes_unchanged=[r"d:\ws\out.txt"])
+    text = render_execution(outcome(outcome="partial", results=[failed],
+                                    taints={"a": report}))
+    assert "declared but unchanged" not in text

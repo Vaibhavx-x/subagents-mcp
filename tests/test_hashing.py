@@ -280,3 +280,30 @@ def test_a_real_source_file_is_still_caught_with_globs_active(workspace, cfg):
     report = compare(before, after, task)
     assert report.tainted
     assert any("injected.py" in p for p in report.undeclared)
+
+
+def test_an_undeclared_rewrite_with_identical_metadata_is_the_known_blind_spot(workspace):
+    """The manifest's limit, written down rather than implied.
+
+    Undeclared paths are tracked by (size, mtime_ns), so a rewrite that keeps
+    both identical is invisible. In practice mtime_ns moves on every write, and
+    forging it takes deliberate effort -- but a declared path would have been
+    content-hashed and caught, and the difference between the two levels is
+    exactly this case.
+    """
+    import os as _os
+
+    stray = workspace / "pkg" / "untouched.py"
+    stray.write_text("x = 1\n", encoding="utf-8")
+    stat = _os.stat(stray)
+
+    task = make_task("a", reads=(str(workspace / "README.md"),), writes=())
+    before = snap(workspace, task)
+
+    stray.write_text("x = 2\n", encoding="utf-8")          # same length
+    _os.utime(stray, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    after = snap(workspace, task)
+
+    assert not compare(before, after, task).tainted, (
+        "if this now fails the manifest got stronger -- update the docs, not the test"
+    )

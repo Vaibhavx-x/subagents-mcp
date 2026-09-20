@@ -50,6 +50,13 @@ def render_execution(outcome: ExecutionOutcome) -> str:
         if result.task_ref in outcome.escalated:
             add("  retried once on the escalation model")
         report = outcome.taints.get(result.task_ref)
+        if report is not None and result.ok and report.writes_unchanged:
+            # Not taint, and not a failure the status field would catch: agy
+            # can report SUCCESS having produced a real-looking answer while
+            # never touching the file. The declared target being byte-identical
+            # afterwards is the only evidence of that.
+            add("  NOTE: declared but unchanged -- "
+                + ", ".join(report.writes_unchanged[:3]))
         if report is not None and report.tainted:
             # Named, not counted. "1 path changed" tells a human nothing they
             # can act on, and this is the only signal that a worker did

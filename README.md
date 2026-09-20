@@ -107,7 +107,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 300 tests, no API calls
+python -m pytest                    # 303 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
