@@ -90,23 +90,13 @@ DEFECTS: list[tuple[str, str, str, str]] = [
      'attribution = "task" if len(runnable) == 1 else "wave"',
      'attribution = "task" if len(runnable) >= 1 else "wave"',
      "attribution claims per-task precision for a whole parallel wave"),
-    # --------------------------------------------------------------- hashing
-    ("hashing",
-     "return any(fnmatch(name, pattern) or fnmatch(norm_path, pattern)",
-     "return any(fnmatch(name, pattern) and fnmatch(norm_path, pattern)",
-     "or became and: ignore globs stop matching almost everything"),
-    ("hashing",
-     "return bool(self.reads_modified or self.undeclared or self.missing)",
-     "return bool(self.reads_modified or self.missing)",
-     "undeclared changes no longer count as taint -- the detector's main case"),
-    ("hashing",
-     "except FileNotFoundError:",
-     "except PermissionError:",
-     "a missing file now raises instead of hashing to None"),
-    ("hashing",
-     "dirnames[:] = [d for d in dirnames if not spec.skips_dir(d)]",
-     "dirnames[:] = [d for d in dirnames if spec.skips_dir(d)]",
-     "dropped not: the walk descends only into the directories it should skip"),
+    # hashing is deliberately CLEAN -- the control.
+    #
+    # Calibration scored both arms 100% when every module was known to be
+    # broken: an agent that assumes each file contains defects and reports its
+    # most suspicious lines is right by construction. With one clean module the
+    # task has a wrong answer available, and precision starts measuring
+    # something (NOTES.md section 44).
     # -------------------------------------------------------------------- db
     ("db",
      'conn.execute("PRAGMA foreign_keys=ON;")',
@@ -132,39 +122,56 @@ DEFECTS: list[tuple[str, str, str, str]] = [
 # per-module worker would be given -- that is where delegation should hurt,
 # and a question set without any would be built to flatter the tool.
 QUESTIONS: list[dict] = [
+    # No question names the module its answer is in. Calibration scored 100%
+    # when they did: "In db.py, what is WRITE_ATTEMPTS" is a grep, not a
+    # question. Finding the right file is now part of the task, and for a
+    # delegating parent it is the part that has to survive being split up.
+    #
+    # `derived` marks an answer that is not a literal anywhere -- it has to be
+    # worked out. `--check` still proves the INPUTS are present; `derivation`
+    # records the arithmetic so the key can be audited rather than trusted.
     {"id": 1, "module": "db", "needle": "WRITE_ATTEMPTS = ", "answer": "6",
-     "text": "In db.py, how many attempts does a write transaction make to take the lock?"},
-    {"id": 2, "module": "db", "needle": 'PRAGMA busy_timeout=', "answer": "5000",
-     "text": "In db.py, what value is PRAGMA busy_timeout set to?"},
+     "text": "How many attempts does a write transaction make to take the database lock?"},
+    {"id": 2, "module": "db", "needle": "PRAGMA busy_timeout=", "answer": "5000",
+     "text": "What busy_timeout is set on every database connection?"},
     {"id": 3, "module": "db", "needle": "PRAGMA journal_mode=", "answer": "WAL",
-     "text": "In db.py, what journal_mode does connect() set?"},
-    {"id": 4, "module": "db", "needle": "conn.execute(\"BEGIN IMMEDIATE\")",
+     "text": "What journal_mode does every database connection use?"},
+    {"id": 4, "module": "db", "needle": 'conn.execute("BEGIN IMMEDIATE")',
      "answer": "BEGIN IMMEDIATE",
-     "text": "In db.py, which exact SQL statement starts a write transaction?"},
-    {"id": 5, "module": "worker", "needle": "KILL_GRACE_S = ", "answer": "20",
-     "text": "In worker.py, what is the value of KILL_GRACE_S?"},
-    {"id": 6, "module": "worker", "needle": "AGY_TIMEOUT_BANNER = ",
+     "text": "Which exact SQL statement begins a write transaction?"},
+    {"id": 5, "module": "db", "needle": "WRITE_BACKOFF_S = ", "answer": "1.55",
+     "derived": True, "spans": "execution",
+     "derivation": "6 attempts means 5 sleeps; 0.05 * (1+2+4+8+16) = 1.55, jitter excluded",
+     "text": ("Ignoring the random jitter, what is the TOTAL number of seconds a "
+              "write transaction can spend sleeping across all of its retries?")},
+    {"id": 6, "module": "worker", "needle": "KILL_GRACE_S = ", "answer": "20",
+     "spans": "execution",
+     "text": ("The orchestrator gives a worker its own budget and then kills it a "
+              "fixed number of seconds later. How many seconds?")},
+    {"id": 7, "module": "worker", "needle": "AGY_TIMEOUT_BANNER = ",
      "answer": "print timeout after",
-     "text": "In worker.py, what exact string is AGY_TIMEOUT_BANNER?"},
-    {"id": 7, "module": "worker", "needle": "return code.value == 259",
+     "text": ("What exact string on stderr identifies the CLI having hit its own "
+              "print timeout?")},
+    {"id": 8, "module": "worker", "needle": "return code.value == 259",
      "answer": "259",
-     "text": "In worker.py, which numeric exit code means a process is still running?"},
-    {"id": 8, "module": "hashing", "needle": "_READ_CHUNK = ", "answer": "1 << 20",
-     "text": "In hashing.py, what is _READ_CHUNK set to? Give the expression as written."},
-    {"id": 9, "module": "hashing", "needle": "DEFAULT_IGNORE_GLOBS = ", "answer": "*.log",
-     "text": "In hashing.py, what is the FIRST pattern in DEFAULT_IGNORE_GLOBS?"},
-    {"id": 10, "module": "execution", "needle": "SCOPE_SUMMARY_MAX = ", "answer": "300",
-     "text": "In execution.py, what is SCOPE_SUMMARY_MAX?"},
-    # ---- cross-module: the evidence is NOT in the module that uses it ----
-    {"id": 11, "module": "worker", "needle": "KILL_GRACE_S = ", "answer": "20",
-     "spans": "execution",
-     "text": ("execution.py kills a worker at config.worker_timeout_s + KILL_GRACE_S. "
-              "What is the numeric value of KILL_GRACE_S?")},
-    {"id": 12, "module": "db", "needle": "WRITE_BACKOFF_S = ", "answer": "0.05",
-     "spans": "execution",
-     "text": ("execution.py persists each worker's result through db.write_transaction, "
-              "which backs off before retrying a locked database. What is the base "
-              "backoff in seconds?")},
+     "text": "Which numeric Windows exit code means a process is still running?"},
+    {"id": 9, "module": "hashing", "needle": "_READ_CHUNK = ", "answer": "1 << 20",
+     "text": ("What chunk size is used when hashing a file? Give the expression "
+              "exactly as written.")},
+    {"id": 10, "module": "hashing", "needle": "DEFAULT_IGNORE_GLOBS = ",
+     "answer": "*.log",
+     "text": "What is the FIRST pattern in the default ignore globs?"},
+    {"id": 11, "module": "execution", "needle": 'for phase, snap in (("pre", before)',
+     "answer": "6", "derived": True,
+     "derivation": "3 declared paths (2 reads + 1 write) x 2 phases = 6 rows",
+     "text": ("When a taint verdict is recorded for a task declaring 2 reads and 1 "
+              "write, how many rows are inserted into the file_hashes table?")},
+    {"id": 12, "module": "execution",
+     "needle": "asyncio.Semaphore(max(1, config.max_parallel))",
+     "answer": "1", "derived": True,
+     "derivation": "max(1, 0) == 1 -- the floor exists so a misconfigured 0 still runs",
+     "text": ("If max_parallel were configured as 0, how many workers would a wave "
+              "run at once?")},
 ]
 
 
@@ -288,9 +295,22 @@ def check(dest: Path) -> list[str]:
             problems.append(f"Q{question['id']}: needle {question['needle']!r} not found "
                             f"in {question['module']}.py")
             continue
+        if question.get("derived"):
+            # A derived answer is not a literal anywhere, so there is nothing to
+            # match. What can be checked is that its INPUT is still in the code
+            # -- and that the arithmetic behind it is written down, so a reader
+            # can disagree with the key instead of having to trust it.
+            if not question.get("derivation"):
+                problems.append(f"Q{question['id']}: derived but records no derivation")
+            continue
         if not any(question["answer"] in ln for ln in matching):
             problems.append(f"Q{question['id']}: answer {question['answer']!r} is not on "
                             f"the line its evidence names")
+
+    # 6. a module with nothing planted in it, so precision has something to
+    #    measure and "assume everything is broken" is not a winning strategy.
+    if set(by_module) == set(MODULES):
+        problems.append("every module carries a defect -- there is no clean control")
     return problems
 
 

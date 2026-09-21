@@ -1108,3 +1108,70 @@ git and must not move; a live log belongs somewhere git never looks.
 first real fan-out (section 28). Both times the cause was one file being asked
 to be two things at once -- a record and a running process's scratch space.*
 
+## 44. The calibration gate fired, twice, and I stopped tuning
+
+The Phase 6 plan put a gate before the spend: run each task once, solo, and if
+it scores above 90% or below 30%, rewrite it before measuring anything. A
+ceiling measures nothing, which is the failure `bench/RESULTS.md` section 3
+already documents -- 23 of 23 graded runs passed, so that bench could rank
+cost and could not rank quality.
+
+**First calibration: 100% on both tasks.** The reasons were mine, not the
+model's:
+
+- the audit prompt listed the defect categories -- "inverted conditions,
+  swapped operators, off-by-one errors, wrong constants" -- which turns an
+  audit into a search-and-replace;
+- every extraction question named the module its answer was in, so "In db.py,
+  what is WRITE_ATTEMPTS" is a grep rather than a question;
+- every module was known to contain defects, so an agent that assumes each
+  file is broken and reports its most suspicious lines is right by
+  construction.
+
+Rewritten: the defect categories removed, the counts removed, one module left
+**clean** as a control so precision has something to measure, module names
+dropped from every question, and a third of the questions replaced with
+answers that have to be derived rather than found (total backoff across the
+retry series; how many `file_hashes` rows a 2-read 1-write task produces).
+
+**Second calibration: 100% on both, again.** But not identically -- the audit's
+parent input went from 147,556 tokens to **411,188** and its wall clock from
+50s to 158s. The model worked nearly three times as hard for the same score.
+
+At which point I stopped. A third pass would be tuning the task until it
+produced the answer I was hoping for, and there is no version of that which is
+honest. What the two rounds actually established is worth more than a
+separable number: **on work this model does perfectly either way, the accuracy
+axis cannot separate the arms** -- and the ceiling is on arm A, the control, so
+any drop in the delegating arm is still measurable against it.
+
+`aggregate.ceiling_warning` prints CEILING into the results whenever both arms
+land above 90%, so a comparison that measures nothing says so in the report
+rather than in my head.
+
+*Lesson kept: the gate did its job by refusing to let me publish 100% against
+100% as "no difference". The thing it could not do was tell me when to stop
+making the task harder -- that had to be a decision about honesty rather than
+about calibration.*
+
+## 45. The estimate for my own measurement was out by two
+
+Budgeted in the plan: ~3.3M tokens for 20 runs. Measured after one real
+calibration run, the revised figure was ~6.4M -- almost exactly double.
+
+The error was using the published A/B numbers (a four-module documentation
+task, ~99k parent input solo) as the model for a four-module *audit*. An audit
+re-reads, cross-references and reasons about every line; documentation
+summarises it once. The audit arm measured **411,188** parent input tokens,
+4.1x the documentation task on the same four files.
+
+Cut to four repeats rather than five, and reported rather than absorbed. This
+is the same rule as `propose_plan`'s estimator: a number whose provenance is
+invisible is one nobody can challenge -- and an estimate quoted from a
+different task shape is exactly that.
+
+*Lesson kept: I have now been wrong about a duration estimate (section 24), a
+p90 (section 0.3), and a token budget, each time by reusing a measurement from
+a task that looked similar. The shape of the work matters more than the size
+of the input.*
+

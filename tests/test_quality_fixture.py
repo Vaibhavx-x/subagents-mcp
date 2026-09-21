@@ -110,7 +110,29 @@ def test_every_answer_is_where_its_evidence_says_it_is(key):
             encoding="utf-8")
         lines = [ln for ln in source.splitlines() if question["needle"] in ln]
         assert lines, f"Q{question['id']}: needle not found"
+        if question.get("derived"):
+            continue
         assert any(question["answer"] in ln for ln in lines), f"Q{question['id']}"
+
+
+def test_a_derived_answer_writes_down_its_arithmetic(key):
+    """A derived answer is not a literal anywhere, so nothing can check it
+    mechanically. The derivation is what lets a reader disagree with the key
+    rather than having to trust it."""
+    derived = [q for q in key["questions"] if q.get("derived")]
+    assert derived, "no derived questions -- every answer is a grep away"
+    for question in derived:
+        assert question.get("derivation"), f"Q{question['id']}"
+
+
+def test_one_module_is_a_clean_control(key):
+    """Calibration scored both arms 100% when every module was known to be
+    broken: an agent that assumes each file has defects and reports its most
+    suspicious lines is right by construction. A clean module gives the task a
+    wrong answer to get (NOTES.md section 44)."""
+    planted = {d["module"] for d in key["defects"]}
+    clean = set(key["modules"]) - planted
+    assert clean, "every module carries a defect -- precision measures nothing"
 
 
 def test_some_questions_deliberately_span_modules():

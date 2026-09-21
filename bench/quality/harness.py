@@ -137,8 +137,13 @@ def materialise(task: str, run_id: str) -> Path:
 
 
 # --------------------------------------------------------------------- prompts
-AUDIT_SOLO = """Four Python modules under src/ each contain several deliberate defects --
-inverted conditions, swapped operators, off-by-one errors, wrong constants.
+# The prompts deliberately do NOT say what kind of defect to look for, how many
+# there are, or that every module has one. Calibration scored 100% when they
+# did -- naming the categories turns an audit into a search-and-replace
+# (NOTES.md section 44).
+AUDIT_SOLO = """Some of the Python modules under src/ contain defects: lines whose behaviour
+contradicts what the surrounding code and comments clearly intend. Some modules
+may be entirely correct.
 
 Read each file and write findings/<name>.md listing the defects you find.
 
@@ -147,7 +152,8 @@ Use EXACTLY this format, one defect per line, and nothing else in the file:
 LINE <number>: <short description>
 
 where <number> is the line number in that module. Report only lines you believe
-are actually defective. Do not modify anything under src/.
+are actually defective -- a wrong line counts against you. Do not modify
+anything under src/.
 
 Modules: {names}"""
 
@@ -158,19 +164,22 @@ Call propose_plan with workspace_root "{root}" and one task per module below.
 Each task_ref is "audit-<name>", each reads is ["src/<name>.py"], each writes is
 ["findings/<name>.md"], and each instruction is:
 
-"src/<name>.py contains several deliberate defects -- inverted conditions,
-swapped operators, off-by-one errors, wrong constants. Read it and write
-findings/<name>.md listing the defects you find. Use EXACTLY this format, one
+"src/<name>.py may contain defects: lines whose behaviour contradicts what the
+surrounding code and comments clearly intend. It may also be entirely correct.
+Read it and write findings/<name>.md listing the defects you find. If you find
+none, write an empty file. Use EXACTLY this format, one
 defect per line, and nothing else in the file: LINE <number>: <short
 description>, where <number> is the line number in src/<name>.py. Report only
-lines you believe are actually defective. Do not modify anything under src/."
+lines you believe are actually defective -- a wrong line counts against you.
+Do not modify anything under src/."
 
 Modules: {names}
 
 Then call execute_plan with the plan_id and plan_digest it returns, and a short
 affects argument naming what is written."""
 
-EXTRACT_SOLO = """Answer these questions about the Python modules under src/.
+EXTRACT_SOLO = """Answer these questions about the Python modules under src/. No question tells
+you which file its answer is in; finding it is part of the task.
 
 Write answers/answers.md using EXACTLY this format, one answer per line, and
 nothing else in the file:

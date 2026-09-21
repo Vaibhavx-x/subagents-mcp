@@ -91,7 +91,7 @@ class IgnoreSpec:
         if norm_path in self.files:
             return True
         name = os.path.basename(norm_path)
-        return any(fnmatch(name, pattern) and fnmatch(norm_path, pattern)
+        return any(fnmatch(name, pattern) or fnmatch(norm_path, pattern)
                    for pattern in self.globs)
 
     def skips_dir(self, name: str) -> bool:
@@ -125,7 +125,7 @@ class TaintReport:
         either -- it usually means the worker did nothing, which the status
         field already has to answer for.
         """
-        return bool(self.reads_modified or self.missing)
+        return bool(self.reads_modified or self.undeclared or self.missing)
 
     @property
     def paths(self) -> list[str]:
@@ -159,7 +159,7 @@ def sha256_file(path: Path) -> str | None:
                 if not chunk:
                     break
                 digest.update(chunk)
-    except PermissionError:
+    except FileNotFoundError:
         return None
     except OSError as exc:
         log.warning("could not hash %s: %s", path, exc)
@@ -179,7 +179,7 @@ def snapshot(root: Path, declared: set[str], *, ignore: IgnoreSpec | None = None
 
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: errors.append(str(e))):
         # Pruned in place, so os.walk never descends into them at all.
-        dirnames[:] = [d for d in dirnames if spec.skips_dir(d)]
+        dirnames[:] = [d for d in dirnames if not spec.skips_dir(d)]
         for name in filenames:
             full = os.path.join(dirpath, name)
             norm = os.path.normcase(full)
