@@ -2,7 +2,9 @@
 Capability probe for the sub-agent orchestrator project.
 
 Five tools, each answering one unresolved question about the real client.
-Everything is logged to probe.log (NEVER stdout - stdout is the protocol channel).
+Everything is logged to probe.live.log, which is gitignored (NEVER stdout -
+stdout is the protocol channel). The committed probe.log is the recorded
+session behind RESULTS.md and is not written to.
 
 Run:  agy mcp add probe -- python /abs/path/probe_server.py
       (or add to Antigravity's MCP config manually; see README.md)
@@ -39,7 +41,17 @@ from mcp.server.mcpserver import (
 )
 from mcp.types import InputRequiredResult
 
-LOG_PATH = os.environ.get("PROBE_LOG", os.path.join(os.path.dirname(os.path.abspath(__file__)), "probe.log"))
+# probe.live.log, NOT probe.log. `probe.log` is committed evidence -- the
+# recorded capability-probe session that probe/RESULTS.md is derived from -- and
+# this server is still registered in the client, so it starts whenever the
+# client does. Appending to the committed file left the repo permanently dirty,
+# mutated the artifact the results cite, and held a lock that made `git stash`
+# fail outright. A live log belongs in a gitignored file; the evidence belongs
+# in git, unchanging. PROBE_LOG still overrides.
+LOG_PATH = os.environ.get(
+    "PROBE_LOG",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "probe.live.log"),
+)
 
 logging.basicConfig(
     filename=LOG_PATH,

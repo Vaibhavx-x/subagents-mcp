@@ -5,7 +5,9 @@ If you are about to contradict one, re-measure first and write the result into
 `NOTES.md`. Do not quietly "fix" one of these back to the obvious answer.
 
 **Environment:** Windows 11, Git Bash, Python 3.13 (`C:\Python313\python.exe`),
-`mcp` 2.2.0, `agy` CLI 1.2.6, MCP protocol `2026-07-28`.
+`mcp` 2.2.0, `agy` CLI 1.2.7, MCP protocol `2026-07-28`.
+(`probe/` and `bench/` say 1.2.6 and should stay that way -- those numbers
+were measured on it.)
 
 ---
 

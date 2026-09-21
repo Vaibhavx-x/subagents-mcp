@@ -9,10 +9,9 @@ counters.
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 
 from conftest import task_entry
-from test_execution import GOOD_SCOPE, make_plan, make_result, recording_runner, run
+from test_execution import GOOD_SCOPE, make_plan, recording_runner, run
 from test_taint_execution import writing_runner
 
 from subagents import cache, execution
@@ -298,3 +297,37 @@ def test_disabling_the_cache_restores_the_old_behaviour_exactly(cfg, workspace):
     assert again.cached_refs == ()
     assert spawned == ["a"]
     assert outcome.cached == {}
+
+
+def test_a_hit_over_a_previous_real_attempt_erases_that_attempts_traces(cfg, workspace):
+    """The ON CONFLICT path, which the happy path never reaches.
+
+    A task that ran for real and FAILED leaves a row carrying that attempt's
+    timestamps and model. If a later plan then records the same work, this
+    row's next state is a cache hit -- and updating only the status left the
+    failed attempt's duration in place, where `completed_worker_durations`
+    picked it up as a completed worker's and fed it to the p90 estimator.
+    `model_used` also still named the real model, so the A/B contamination
+    guard, which looks for 'cache', could not see the run at all.
+    """
+    plan = make_plan(cfg, workspace, DOC)
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=recording_runner([], {"a": "failed"})))
+    assert row(cfg, plan.plan_id, "a")["started_at"] is not None
+
+    # A different plan does the work for real, so an entry now exists.
+    warm(cfg, workspace)
+    assert completed_worker_durations(cfg.db_path) != []
+    before = completed_worker_durations(cfg.db_path)
+
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=recording_runner([])))
+
+    stored = row(cfg, plan.plan_id, "a")
+    assert stored["status"] == "ok"
+    assert stored["model_used"] == "cache", "the run is invisible to the A/B guard"
+    assert stored["started_at"] is None and stored["finished_at"] is None
+    assert stored["tokens_in"] == 0
+    assert completed_worker_durations(cfg.db_path) == before, (
+        "a failed attempt's duration was resurrected as a completed worker's"
+    )

@@ -1043,3 +1043,68 @@ worth computing at all.
 a disappointing number into a finding. Without it I would have reported 6% and
 moved on, instead of going and reading what those two runs actually were.*
 
+## 42. A cache hit left the failed attempt's fingerprints on the row
+
+Found by auditing rather than by a failure, which is the only way this one was
+ever going to surface.
+
+`persist_cached` writes a run row with no `started_at`/`finished_at` and zero
+tokens, and the docstring states both as guarantees. The INSERT honoured them.
+The `ON CONFLICT ... DO UPDATE` branch did not: it set the status, the reason
+and the token counts, and left `started_at`, `finished_at` and `model_used`
+exactly as the previous attempt had written them.
+
+Reaching that branch takes a specific order, which is why no test found it:
+
+1. plan P runs the task for real and **fails**, leaving a row with a real
+   duration on it;
+2. a different plan then does the same work successfully, recording an entry;
+3. P is re-executed, and now hits.
+
+Two consequences, and the second is worse than the first:
+
+- `completed_worker_durations` selects on `status='ok'` and the timestamps
+  being present. P's row was now `ok` and still carried the **failed**
+  attempt's 100s duration, so a run that did not succeed became a sample in
+  the p90 the estimator quotes.
+- `model_used` still named the real model, so the A/B contamination guard --
+  added in this same phase, and which looks for `model_used = 'cache'` --
+  could not see the run at all. The guard I wrote to stop a warm cache
+  silently improving the headline had a hole in exactly the case where the
+  cache was doing something unusual.
+
+Fixed by making the conflict branch a full overwrite: NULL both timestamps,
+set `model_used`, clear the taint columns. The regression test constructs the
+three-step order above and fails without it.
+
+*Lesson kept: I wrote the INSERT and the ON CONFLICT clause in one statement
+and tested only the INSERT. An upsert is two code paths wearing one set of
+parentheses, and the happy path never reaches the second one.*
+
+## 43. The probe server was still writing to its own evidence
+
+`probe/probe.log` is committed -- it is the recorded capability-probe session
+`probe/RESULTS.md` is derived from. `probe/probe_server.py` is also still
+registered in the client, so it starts whenever the client does, and it logged
+to that same file.
+
+Three costs, none of which announced itself:
+
+- the repo was permanently dirty, so "working tree clean" stopped meaning
+  anything;
+- the artifact the results cite kept changing under them;
+- and the open handle made `git stash` fail outright -- `unable to unlink old
+  'probe/probe.log'` -- mid-way through, leaving changes in a stash entry that
+  `stash pop` then refused to apply. Recovering meant pulling the two files I
+  wanted back out of the stash by hand.
+
+That last one is how it was found. It had been true since Phase 1.
+
+Fixed by pointing the live server at `probe/probe.live.log` (gitignored) and
+restoring the committed file. `PROBE_LOG` still overrides. Evidence belongs in
+git and must not move; a live log belongs somewhere git never looks.
+
+*Lesson kept: this is the same server whose log tainted every task in the
+first real fan-out (section 28). Both times the cause was one file being asked
+to be two things at once -- a record and a running process's scratch space.*
+

@@ -34,3 +34,8 @@ CONTEXT.md
 
 # A/B measurement scratch workspaces, materialised per run.
 bench/ab/work/
+
+# The probe server is still registered in the client, so it starts whenever the
+# client does. It logs here; probe/probe.log is committed evidence and must not
+# be appended to (see probe/probe_server.py).
+probe/probe.live.log

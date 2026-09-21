@@ -27,8 +27,9 @@ Per-turn input exceeds output by one to two orders of magnitude in every one of
 33 benchmark runs (`bench/RESULTS.md`): 110,323–305,321 input against
 988–15,851 output. **Context, not generation, is the dominant token cost.**
 
-So the question is whether delegating actually reduces it. Measured over nine
-runs of the same four-module documentation task (`bench/ab/RESULTS.md`):
+So the question is whether delegating actually reduces it. Measured over
+fifteen runs of the same four-module documentation task, five per arm, none
+void (`bench/ab/RESULTS.md`):
 
 | arm | parent input (median) | spread | total input |
 |---|---|---|---|
@@ -157,6 +158,8 @@ PLAN b42ddb6e9ebb
   tiers          : auto=1, gated=1, never=0
   schedule       : 2 worker(s) in 1 wave(s), max_parallel=4
   estimate       : ~70s expected, ~610s worst case
+                   (expected from p90 of 32 local run(s))
+  client deadline : 900s (timeoutSeconds in ~/.gemini/config/mcp_config.json)
 ```
 
 ### Running the tests

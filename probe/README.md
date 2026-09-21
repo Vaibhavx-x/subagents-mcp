@@ -3,7 +3,9 @@
 Five tools against the real Antigravity client. Half a day. Run this before
 writing any orchestrator code — two of the outcomes change the architecture.
 
-Everything lands in `probe.log`. Nothing is ever written to stdout.
+A live run lands in `probe.live.log`, which is gitignored. The committed
+`probe.log` is the recorded session this directory's results come from and
+is never appended to. Nothing is ever written to stdout.
 
 ---
 
@@ -229,4 +231,5 @@ Fill in `RESULTS.md` as you go. That file is a submission artifact, not
 bookkeeping: a candidate who probed a client's real behaviour and wrote down
 what they found reads very differently from one who assumed.
 
-Keep the whole of `probe.log` in the repo too.
+Keep the whole of `probe.log` in the repo too -- it is the record, not a
+scratch file, which is why a live run writes somewhere else.

@@ -381,8 +381,18 @@ def persist_cached(config: Config, plan_id: str, task: Task, wave_index: int,
             " tokens_in, tokens_out, thinking_tokens, cache_read_tokens, exit_reason,"
             " tainted)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,0,0,0,0,?,0)"
+            # A full overwrite, not a partial one. A task that ran for real and
+            # FAILED already has a row carrying that attempt's timestamps and
+            # model -- and if a later plan then records the same work, this
+            # row's next state is a cache hit. Updating only the status left
+            # the failed attempt's started_at/finished_at in place, so its
+            # duration was counted as a completed worker's and fed the p90
+            # estimator, and model_used still said `fake` so the A/B
+            # contamination guard (which looks for 'cache') could not see it.
             " ON CONFLICT(plan_id, task_ref) DO UPDATE SET"
             "   status=excluded.status, exit_reason=excluded.exit_reason,"
+            "   model_used=excluded.model_used, started_at=NULL, finished_at=NULL,"
+            "   tainted=0, tainted_paths=NULL,"
             "   tokens_in=0, tokens_out=0, thinking_tokens=0, cache_read_tokens=0",
             (uuid.uuid4().hex[:12], plan_id, task.task_ref, wave_index, task.instruction,
              json.dumps(list(task.reads)), json.dumps(list(task.writes)), task.model,
