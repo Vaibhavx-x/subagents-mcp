@@ -18,6 +18,7 @@ import json
 import shutil
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -79,7 +80,18 @@ def run_once(root: Path, writes: list[str], config) -> tuple[bool, list[str]]:
 
 
 def main() -> int:
-    config = load_config()
+    # The cache is off for this demo, deliberately and not as a precaution.
+    #
+    # Step 3 re-runs the same instruction against the same rebuilt workspace,
+    # and the first time it comes back clean it is recorded. A second
+    # invocation of this script would then serve step 3 from cache, spawn one
+    # worker instead of two, and still print "2 workers" -- a demonstration of
+    # detection that quietly stopped running the thing being detected.
+    #
+    # The key would in fact diverge here (step 3 declares an extra write), so
+    # this is belt and braces. A demo must spawn what it claims to spawn, and
+    # relying on a key collision NOT happening is the wrong thing to rely on.
+    config = replace(load_config(), cache_ttl_s=0)
     root = fresh_workspace()
 
     rule("1. The plan declares summary.md. The worker is asked for notes.md too.")

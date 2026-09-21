@@ -347,3 +347,33 @@ def test_a_missing_spread_is_treated_as_overlapping():
 
     assert overlaps(None, (1, 2))
     assert overlaps((1, 2), None)
+
+
+# ------------------------------------------------- the cache must never warm here
+def test_a_run_served_from_cache_is_void():
+    """The A/B numbers compare the cost of doing four modules' worth of work.
+    A cached task is not that work, so a run containing one is measuring
+    something else and must not reach a median.
+
+    Structurally unreachable -- every run materialises its own workspace under
+    a unique path and the cache key covers the absolute root -- which is
+    precisely why it is asserted. "Impossible" that nothing checks is how a
+    warm cache silently improves a headline.
+    """
+    run = record(arm="C", delegated=True, worker_count=4, cached_hits=1)
+    assert "cache served 1 task(s)" in classify_void(run, "")
+
+
+def test_a_cold_run_is_not_void_for_the_cache():
+    run = record(arm="C", delegated=True, worker_count=4)
+    assert run.cached_hits == 0
+    assert classify_void(run, "") == ""
+
+
+def test_the_demo_disables_the_cache_rather_than_hoping():
+    """demo_taint.py re-runs the same instruction against the same rebuilt
+    workspace at step 3. Left on, a second invocation would serve that step
+    from cache, spawn one worker instead of two, and still print "2 workers".
+    """
+    source = (REPO_ROOT / "bench" / "ab" / "demo_taint.py").read_text(encoding="utf-8")
+    assert "cache_ttl_s=0" in source

@@ -56,8 +56,8 @@ CSV_COLUMNS = [
     "run_id", "arm", "repeat", "wall_s",
     "parent_in", "parent_out", "parent_thinking", "parent_cache_read",
     "worker_in", "worker_out", "worker_count",
-    "server_enabled_observed", "delegated", "files_written", "verified",
-    "agy_status", "void_reason",
+    "server_enabled_observed", "delegated", "cached_hits", "files_written",
+    "verified", "agy_status", "void_reason",
 ]
 
 
@@ -76,6 +76,7 @@ class RunRecord:
     worker_count: int = 0
     server_enabled_observed: bool | None = None
     delegated: bool = False
+    cached_hits: int = 0
     files_written: int = 0
     verified: bool = False
     agy_status: str = ""
@@ -268,10 +269,17 @@ def verify(root: Path) -> tuple[int, bool, str]:
 
 
 # --------------------------------------------------------------------- the database
-def workers_for(db: Path, since: str) -> tuple[int, int, int, bool]:
-    """(count, input, output, delegated) from the runs table since a timestamp."""
+def workers_for(db: Path, since: str) -> tuple[int, int, int, bool, int]:
+    """(count, input, output, delegated, cached) from the runs table since a timestamp.
+
+    `cached` must be zero for every arm. Each run gets a freshly materialised
+    workspace under a unique path, and the cache key covers the absolute
+    workspace root, so a hit is structurally impossible -- but "impossible"
+    that nothing checks is how a warm cache would quietly improve the headline
+    number without anyone noticing it had stopped measuring the same thing.
+    """
     if not Path(db).is_file():
-        return 0, 0, 0, False
+        return 0, 0, 0, False, 0
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         rows = conn.execute(
@@ -280,6 +288,13 @@ def workers_for(db: Path, since: str) -> tuple[int, int, int, bool]:
         plans = conn.execute(
             "SELECT COUNT(*) FROM plans WHERE created_at > ?", (since,)
         ).fetchone()[0]
+        # Cached rows carry no started_at, so they are absent from `rows` above
+        # and have to be counted separately -- which is also the point: they
+        # never contaminate the token sums.
+        cached = conn.execute(
+            "SELECT COUNT(*) FROM runs r JOIN plans p ON p.id = r.plan_id"
+            " WHERE p.created_at > ? AND r.model_used = 'cache'", (since,)
+        ).fetchone()[0]
     finally:
         conn.close()
     return (
@@ -287,6 +302,7 @@ def workers_for(db: Path, since: str) -> tuple[int, int, int, bool]:
         sum(r[0] or 0 for r in rows),
         sum(r[1] or 0 for r in rows),
         plans > 0,
+        cached,
     )
 
 
@@ -333,9 +349,10 @@ def run_one(arm: str, repeat: int, config: Config, toggle: ServerToggle,
     record.parent_thinking = usage.get("thinking_tokens")
     record.parent_cache_read = usage.get("cache_read_tokens")
 
-    count, win, wout, delegated = workers_for(config.db_path, since)
+    count, win, wout, delegated, cached = workers_for(config.db_path, since)
     record.worker_count, record.worker_in, record.worker_out = count, win, wout
     record.delegated = delegated
+    record.cached_hits = cached
 
     record.files_written, record.verified, problems = verify(root)
     record.void_reason = classify_void(record, problems)
@@ -358,6 +375,14 @@ def classify_void(record: RunRecord, problems: str) -> str:
         return f"expected {len(MODULES)} workers, saw {record.worker_count}"
     if record.arm == "A" and record.server_enabled_observed:
         return "server_was_enabled_for_solo_arm"
+    if record.cached_hits:
+        # A cache hit means a task was NOT run, so the tokens this arm spent
+        # are not the tokens the task costs. Every run materialises its own
+        # workspace and the key covers the absolute root, so this should be
+        # unreachable -- which is exactly why it is checked rather than
+        # assumed. A warm cache would improve the headline number by measuring
+        # something else.
+        return f"cache served {record.cached_hits} task(s); not a cold measurement"
     if not record.verified:
         return f"work not verified: {problems}"
     return ""
