@@ -86,3 +86,14 @@ python bench/ab/run_ab.py --repeats 1 --dry   # fake parent, spends nothing
 python bench/ab/report.py               # writes ab/RESULTS.md
 python bench/ab/demo_taint.py           # the out-of-scope demo, 2 workers
 ```
+
+## And task reuse is a third experiment
+
+[`cache/`](cache/) asks how often finished work gets asked for twice, and what
+it costs when it does. Results in [`cache/RESULTS.md`](cache/RESULTS.md).
+
+```bash
+python bench/cache/replay.py     # the historical bound; free, no agy
+python bench/cache/measure.py    # cold against warm; ONE worker
+```
+

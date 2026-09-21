@@ -977,3 +977,69 @@ plans that were never real work. Both times the number was bigger than the
 evidence, and both times nothing raised an error -- a count is not a thing that
 fails loudly when it is wrong.*
 
+## 40. The cache never hit, and the fake agreed with it
+
+The integration was written, the wave loop called `cache.lookup`, the tests
+for the key all passed -- and not one end-to-end test hit. Twelve failures at
+once, which is the good kind: a single cause.
+
+`record` keyed the entry on `worker_result.model_used` -- what agy reported
+back. `lookup` keyed on `task.model or config.model` -- what the plan asked
+for. Under the fake worker those were `"fake"` and `"gemini-3.8-flash-low"`,
+so every entry was filed under a name nothing would ever ask for.
+
+The fix is one line and the reasoning is the useful part: **a lookup happens
+before any worker exists**, so the requested model is the only thing it can
+possibly know. Keying on what came back is keying on something unavailable at
+the moment the question is asked.
+
+It also settled a question I had been deferring. An escalation retry runs on
+the stronger model, so it now records under `model_escalate` -- and a later
+plan asking for the default model therefore MISSES and runs the task properly.
+That is the conservative direction: the success on record was only achieved by
+the stronger model, and serving it as though the cheap one had produced it
+would be a promise the entry cannot keep.
+
+*Lesson kept: the failure was loud only because the assertions were on
+behaviour (`spawned == []`) rather than on the cache's own internals. A test
+asserting `record` was called would have passed, and the feature would have
+shipped doing nothing -- which is exactly how `file_hashes` survived four
+phases (section 38).*
+
+## 41. The prediction was zero and the answer was two
+
+Written into the Phase 5 plan before any of it existed: the retrospective hit
+rate would be **0 of 33**, because every A/B run materialises a fresh
+workspace and the key covers the absolute root. A non-zero answer was to be
+chased rather than accepted.
+
+It came out at **2 of 33**, and the chase was worth it.
+
+All 20 A/B worker runs were cold exactly as predicted. Both candidates are
+ad-hoc runs from Phases 2-4, and both are the re-propose loop:
+
+| | run 1 | run 2, 23 minutes later |
+|---|---|---|
+| status | `ok` | **`timeout`** |
+| input tokens | 219,870 | **164,283** |
+| result | wrote `scratch/audit.md` | nothing |
+
+Same instruction, same three declared reads, same workspace. `git log` shows
+nothing committed to those files in between, so the inputs were almost
+certainly identical -- almost, because uncommitted working-tree edits in that
+window cannot be reconstructed now.
+
+And the second run is the transcript already quoted in section 18: `SUCCESS`,
+empty response, real usage, no answer. **164,283 input tokens re-attempting
+work that was already complete, and it still returned nothing.**
+
+The number stays reported as an *upper bound* rather than a rate, because two
+of the three conditions for a hit -- the read hashes and the write hashes --
+have no data before this phase. A counted run might have hit; an uncounted one
+could not have. Zero would have meant zero, which is what makes the bound
+worth computing at all.
+
+*Lesson kept: writing the prediction down first is what turned "2 of 33" from
+a disappointing number into a finding. Without it I would have reported 6% and
+moved on, instead of going and reading what those two runs actually were.*
+
