@@ -60,8 +60,9 @@ def build(rows: list[dict]) -> str:
     add("")
 
     add("## The two numbers the three arms exist to separate\n")
+    per_arm = min(summary[a]["n"] for a, _, _ in ARMS)
     add("Each difference is reported with whether the arms' observed ranges actually "
-        "separate. Three runs per arm supports no meaningful significance test, but "
+        f"separate. {per_arm} runs per arm supports no meaningful significance test, but "
         "overlapping ranges are enough to say a difference is not measurable -- and "
         "saying so is the entire reason the spread column exists.\n")
 

@@ -10,11 +10,13 @@ parent calls `execute_plan`. Workers run as separate processes, each writing its
 full output to SQLite the moment it finishes and returning only a short summary
 and a handle. `collect` reads results back, **including after a timeout**.
 
-> **Status: Phase 3 complete.** Workers in a wave run **concurrently** under a
+> **Status: Phase 4 complete.** Workers in a wave run **concurrently** under a
 > ceiling; every run is hashed before and after and reports what changed
 > against what was declared; a failed worker is retried once on a stronger
-> model and its dependants are blocked rather than fed stale state. Remaining:
-> the tool-call cache and git worktrees, both deliberately cut.
+> model and its dependants are blocked rather than fed stale state. The
+> headline claim is **measured** (below), and the wall-clock estimate comes
+> from this install's own p90 rather than a constant. Deliberately not built:
+> the tool-call cache and git worktrees, both cut-order items.
 
 ---
 
@@ -29,24 +31,29 @@ runs of the same four-module documentation task (`bench/ab/RESULTS.md`):
 
 | arm | parent input (median) | spread | total input |
 |---|---|---|---|
-| **A · solo** — no server | **98,304** | 78,114–99,582 | 98,304 |
-| **B · registered** — server present, not used | 76,412 | 65,566–91,399 | 76,412 |
-| **C · delegating** | **47,830** | 34,438–64,160 | **218,744** |
+| **A · solo** — no server | **99,582** | 78,114–144,008 | 99,582 |
+| **B · registered** — server present, not used | 83,782 | 65,566–139,062 | 83,782 |
+| **C · delegating** | **62,551** | 34,438–66,162 | **233,465** |
 
-**The delegating parent carried 2.06x less input**, and the A and C ranges do
-not overlap. It also produced 6x less output (1,185 against 7,166) and read a
-tenth as much from cache.
+**The delegating parent carried 1.59x less input**, and the A and C ranges do
+not overlap. It also produced 6x less output (1,192 against 7,745) and read a
+fraction as much from cache.
 
-Two things that table says which a friendlier one would not:
+Three things that table says which a friendlier one would not:
 
-- **Delegation cost 2.23x the total tokens.** Four workers each re-read context
+- **Delegation cost 2.34x the total tokens.** Four workers each re-read context
   the parent already had. The claim here is about the **parent's context
   window** — the thing that fills up and forces a compaction — not about total
   spend, which goes up.
 - **The registration toll (B − A) came out negative and is not a finding.** The
-  A and B ranges overlap almost entirely, so at three runs per arm the cost of
-  loading tool schemas every turn is simply below the noise floor. It is
-  reported as unmeasured rather than as a benefit.
+  A and B ranges overlap almost entirely, so the cost of loading tool schemas
+  every turn is below the noise floor here. It is reported as unmeasured rather
+  than as a benefit.
+- **The first nine runs said 2.06x.** Going from three repeats per arm to five
+  moved the headline down by 23% and collapsed the B−C difference into the
+  noise. Only A−C survives at this sample size, and that is what the number
+  above is. See `NOTES.md` §35 — the caveat about small samples was written
+  before the data and then proved itself.
 
 ## What works today
 
@@ -123,7 +130,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 303 tests, no API calls
+python -m pytest                    # 345 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
@@ -330,6 +337,8 @@ hashing**, which detects changes only to paths we thought to hash.
 |---|---|
 | `probe/` | Capability probe against the real client, with `RESULTS.md` and `probe.log`. Evidence — kept. |
 | `bench/` | Worker model benchmark, with `RESULTS.md` and the audited harness. |
+| `bench/ab/` | The three-arm comparison: what delegation costs and saves, with `RESULTS.md` and a scripted out-of-scope demo. |
+| `tools/` | `inspect_db.py` (what a run recorded) and `install_check.py` (does a clean clone work for someone else). |
 | `NOTES.md` | Every assumption that turned out wrong, and what overturned it. |
 | `CLAUDE.md` | The v2-only SDK rules and design invariants the build must hold. |
 

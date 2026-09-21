@@ -69,3 +69,20 @@ scores as a failure, and this does happen.
   rank them.
 - Full transcripts land in `logs/`. Read the failures; that is where the
   interesting findings are.
+
+## The A/B comparison is a different experiment
+
+This bench measures **one worker doing one task** across model configurations.
+It ranks cost and says nothing about whether the orchestrator helps.
+
+That question lives in [`ab/`](ab/): three arms (no server, server registered
+but unused, server delegating), the same task, parent tokens measured on each.
+Results in [`ab/RESULTS.md`](ab/RESULTS.md).
+
+```bash
+python bench/ab/preflight.py            # can a headless parent call MCP tools?
+python bench/ab/run_ab.py --repeats 3   # spends tokens
+python bench/ab/run_ab.py --repeats 1 --dry   # fake parent, spends nothing
+python bench/ab/report.py               # writes ab/RESULTS.md
+python bench/ab/demo_taint.py           # the out-of-scope demo, 2 workers
+```

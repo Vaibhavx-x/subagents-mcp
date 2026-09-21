@@ -752,6 +752,9 @@ What the same nine runs DO support: A and C do not overlap at all (78,114 floor
 against a 64,160 ceiling). The delegating parent carried 2.06x less input, and
 that one is a measurement.
 
+**Updated at n=5 (§35): the toll is still negative and still overlapping. The
+A−C separation survived; the headline ratio did not.**
+
 *Lesson kept: three runs produce a median, and a median always looks like a
 result. The spread is what says whether it is one -- which is why the spread
 column is printed next to every median rather than kept in a footnote.*
@@ -809,3 +812,36 @@ than the verifier being wrong.
 *Lesson kept: the rehearsal cost two seconds and a fake process. The bug it
 caught would have cost the entire measurement and, worse, might have been read
 as a finding about the model.*
+
+## 35. Two more runs per arm moved the headline 23%
+
+The A/B results were published at three repeats per arm with a caveat written
+before the data existed: *three runs cannot separate an effect smaller than the
+spread.* Then two more repeats per arm were run, and the caveat collected.
+
+| | n=3 | n=5 |
+|---|---|---|
+| A solo (median) | 98,304 | **99,582** |
+| C delegating (median) | 47,830 | **62,551** |
+| headline ratio | **2.06x** | **1.59x** |
+| A range | 78,114–99,582 | 78,114–**144,008** |
+| C range | 34,438–64,160 | 34,438–**66,162** |
+| B−C separated? | yes | **no** |
+
+Two runs of arm A came in at 142k and 144k — nearly double its previous
+ceiling. Nothing changed but the dice. The delegation saving (B−C) collapsed
+into overlap, separated by 596 tokens at n=3 and not separated at all at n=5.
+
+What survived: **A and C still do not overlap** (78,114 floor against a 66,162
+ceiling), so the claim that delegation reduces the parent's context is still a
+measurement rather than a hope. It is just a 1.59x measurement, not 2.06x.
+
+The honest reading is that agy's per-turn token usage has a very wide natural
+spread — the original bench found 110k–305k and this is the same phenomenon —
+and any single-digit sample will produce a confident-looking median that moves
+when you look again.
+
+*Lesson kept: I wrote "three runs cannot separate an effect smaller than the
+spread" as a caveat, published a 2.06x headline underneath it, and then watched
+it become 1.59x. The caveat was not hedging. It was the more accurate of the
+two statements I made that day.*

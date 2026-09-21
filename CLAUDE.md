@@ -214,6 +214,30 @@ an approval we never observed would be a lie in our own audit trail.
 - The cancellation path is the graceful degradation for an unconfigured install.
   It must keep working regardless of what the config says.
 
+## 8b. Measurement rules
+
+The bench shipped six defects because the harness had no tests while the
+product code did. Measurement code is product code here.
+
+- **A run that did not do the work never enters a median.** Verify the
+  deliverable, record a `void_reason`, and report the void count beside the
+  numbers.
+- **Classify from structured fields** -- agy's JSON `status`, the `runs` table,
+  files on disk. Never from prose or a whole-log grep; that is bench defect D2.
+- **Never report a delta whose ranges overlap as an effect.** With single-digit
+  samples there is no significance test worth running, but overlap is free to
+  check and is enough to say "not measurable". Print the spread next to every
+  median. Measured twice now: at n=3 the headline was 2.06x, at n=5 it was
+  1.59x, and a second delta vanished (`NOTES.md` §35).
+- **Report parent tokens and total tokens together.** Delegation reduces the
+  parent's window and increases total spend; showing only the first is the most
+  tempting dishonesty available to this project.
+- **Rehearse against a fake before spending.** The dry run caught a verifier bug
+  that would have voided every real run (`NOTES.md` §34).
+- **An estimate states its provenance** -- "p90 of 20 local run(s)" or
+  "benchmark median, no local history". A number nobody can trace is a number
+  nobody can challenge.
+
 ## 9. Cut order
 
 Cut in this order if time runs out: tool-call cache, then `max_parallel` to 2,
