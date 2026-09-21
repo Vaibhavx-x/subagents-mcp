@@ -10,13 +10,14 @@ parent calls `execute_plan`. Workers run as separate processes, each writing its
 full output to SQLite the moment it finishes and returning only a short summary
 and a handle. `collect` reads results back, **including after a timeout**.
 
-> **Status: Phase 4 complete.** Workers in a wave run **concurrently** under a
-> ceiling; every run is hashed before and after and reports what changed
-> against what was declared; a failed worker is retried once on a stronger
-> model and its dependants are blocked rather than fed stale state. The
+> **Status: v1.0, Phase 5 complete.** Workers in a wave run **concurrently**
+> under a ceiling; every run is hashed before and after and reports what
+> changed against what was declared, with the hashes themselves kept; a failed
+> worker is retried once on a stronger model and its dependants are blocked
+> rather than fed stale state; and work already done is not done again. The
 > headline claim is **measured** (below), and the wall-clock estimate comes
 > from this install's own p90 rather than a constant. Deliberately not built:
-> the tool-call cache and git worktrees, both cut-order items.
+> git worktrees, decided against on evidence. See `CHANGELOG.md`.
 
 ---
 
@@ -108,6 +109,37 @@ characters and shows them **alphabetically**, so the name has to sort ahead of
 **`collect(plan_id)`** — reads results back, including after a cancellation.
 Returns summaries and token usage, never full transcripts.
 
+### Work already done is not done again
+
+A plan cancelled at the deadline, or tainted and re-declared, comes back under
+a **new plan id** — so the within-plan skip cannot help, and every finished
+task gets spawned all over again. That is not hypothetical: this repo's own
+history has a 220k-token audit that was re-proposed 23 minutes later, burned a
+further **164,283 input tokens**, and timed out returning nothing
+(`NOTES.md` §41).
+
+So a finished task is keyed on its workspace, instruction, model, declared
+paths and the sha256 of every declared **read** — and served only while every
+declared **write** still hashes to exactly what that run left behind. A hit
+asserts the outputs are already in place; it never replays them. Delete one
+and the task runs.
+
+Never served for a failed run, a tainted one, a task declaring no `reads` (no
+input fingerprint means nothing but the clock could invalidate it), or an entry
+older than `SUBAGENTS_CACHE_TTL_S` (default 3600; `0` disables it).
+
+**What it cannot check** is an effect outside the declared writes — a test
+suite run, a package installed. Nothing records those, so nothing can verify
+them, and a hit skips them silently. Bounding that window is what the TTL is
+for; it is not a performance tuning knob.
+
+Measured in `bench/cache/RESULTS.md`, smaller number first: it would have
+applied to **at most 2 of 33** runs in this install's history, and when it does
+apply it saves the entire run (25.7 s and 77,768 input tokens against 0.1 s and
+zero). It changes nothing about the Phase 4 numbers, which are all first-time
+work — and a test voids any A/B run that gets a cache hit, so it cannot quietly
+start changing them.
+
 A worker is never trusted to report its own success: agy exits 0 with
 `status: SUCCESS` both when its own timeout fires mid-turn and when a tool is
 auto-denied, in each case having done nothing. A worker that produced no answer
@@ -130,7 +162,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 345 tests, no API calls
+python -m pytest                    # 397 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
@@ -339,6 +371,8 @@ hashing**, which detects changes only to paths we thought to hash.
 | `probe/` | Capability probe against the real client, with `RESULTS.md` and `probe.log`. Evidence — kept. |
 | `bench/` | Worker model benchmark, with `RESULTS.md` and the audited harness. |
 | `bench/ab/` | The three-arm comparison: what delegation costs and saves, with `RESULTS.md` and a scripted out-of-scope demo. |
+| `bench/cache/` | How often finished work is asked for twice, and what it costs when it is. |
+| `CHANGELOG.md` | What each phase delivered and what it measured. |
 | `tools/` | `inspect_db.py` (what a run recorded) and `install_check.py` (does a clean clone work for someone else). |
 | `NOTES.md` | Every assumption that turned out wrong, and what overturned it. |
 | `CLAUDE.md` | The v2-only SDK rules and design invariants the build must hold. |

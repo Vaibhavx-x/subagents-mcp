@@ -27,7 +27,9 @@ for one small edit costs about 10s of process startup and saves nothing.
 
 1. `propose_plan(tasks_json, workspace_root)` -- validates and returns a
    readable plan, a `plan_id` and a `plan_digest`. Cheap, read-only, spawns
-   nothing. Relay the plan text to the human.
+   nothing. Relay the plan text to the human. If it names tasks as already
+   done, say so when you relay it: the human is approving fewer workers than
+   the plan lists.
 2. `execute_plan(affects, plan_id, plan_digest)` -- the human approves
    via the tool-permission prompt.
 3. `collect(plan_id)` -- reads results back.
@@ -66,7 +68,7 @@ verified, because there is nothing to check them against.
 
 ## What comes back
 
-Per task: a status, a short summary, token usage, and a handle. Plus two things
+Per task: a status, a short summary, token usage, and a handle. Plus three things
 that are not statuses and mean different actions:
 
 - **BLOCKED** -- the task never ran, because a task it depends on did not
@@ -77,6 +79,18 @@ that are not statuses and mean different actions:
   something it declared read-only. The change was **detected, not prevented**:
   nothing stops a worker writing where it likes, so this is a report about what
   already happened. Read the named paths before trusting the result.
+- **CACHED** -- the task did not run, because that exact work was already
+  done: same instruction, same model, same declared paths, every declared read
+  unchanged since, and every declared file it writes still exactly as that run
+  left it. You get the earlier result. It cost nothing.
+
+  This is why **re-proposing a whole plan after a timeout is cheap**. The
+  finished tasks come back cached and only the unfinished ones actually run.
+  You do not have to work out which was which.
+
+  It cannot see effects the plan never declared -- a test suite that was run,
+  a package that was installed. If a task's real point was a side effect
+  outside its `writes`, declare that path, or the work may be skipped.
 
 A tainted task is never retried automatically -- a second run compounds an
 undeclared change rather than correcting it.
@@ -100,7 +114,12 @@ and skills all work normally. Do the task directly and report back.
 
 ## If a call times out
 
-**Call `collect(plan_id)`. Do not retry `execute_plan`.** Workers write their
-results the moment they finish, so a timeout usually means most of the work
-survived. Retrying re-runs everything and will time out again.
+**Call `collect(plan_id)` first. Do not retry `execute_plan` on the same
+plan.** Workers write their results the moment they finish, so a timeout
+usually means most of the work survived.
+
+To finish the rest, `propose_plan` again with the same tasks. The ones that
+completed come back **CACHED** and cost nothing, so only the unfinished work
+runs. Re-running `execute_plan` on the old plan id is still the wrong move --
+its approval and its deadline are both spent.
 """
