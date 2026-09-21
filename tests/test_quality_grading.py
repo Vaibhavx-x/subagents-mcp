@@ -14,9 +14,12 @@ from pathlib import Path
 import pytest
 from conftest import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "bench" / "quality"))
+# Imported by package path, never by bare name. `bench/ab/` and
+# `bench/quality/` both define `harness` and `aggregate`, so a bare
+# `import aggregate` resolves to whichever directory landed on sys.path first
+# -- which depends on test collection order and fails somewhere else entirely.
 
-from grade import (  # noqa: E402
+from bench.quality.grade import (  # noqa: E402
     TOLERANCE,
     grade_audit,
     grade_extract,

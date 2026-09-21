@@ -39,3 +39,6 @@ bench/ab/work/
 # client does. It logs here; probe/probe.log is committed evidence and must not
 # be appended to (see probe/probe_server.py).
 probe/probe.live.log
+
+# Quality-measurement scratch workspaces, materialised per run.
+bench/quality/work/

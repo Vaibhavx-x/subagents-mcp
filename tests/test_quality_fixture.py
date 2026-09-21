@@ -16,9 +16,19 @@ from pathlib import Path
 import pytest
 from conftest import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "bench" / "quality"))
+# Imported by package path, never by bare name. `bench/ab/` and
+# `bench/quality/` both define `harness` and `aggregate`, so a bare
+# `import aggregate` resolves to whichever directory landed on sys.path first
+# -- which depends on test collection order and fails somewhere else entirely.
 
-from inject import DEFECTS, MIN_GAP, MODULES, QUESTIONS, build, check  # noqa: E402
+from bench.quality.inject import (  # noqa: E402
+    DEFECTS,
+    MIN_GAP,
+    MODULES,
+    QUESTIONS,
+    build,
+    check,
+)
 
 FIXTURE = REPO_ROOT / "bench" / "quality" / "fixture"
 
