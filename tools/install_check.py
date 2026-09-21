@@ -17,6 +17,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import platform
 import tempfile
 from pathlib import Path
 
@@ -26,6 +27,7 @@ REPO = Path(__file__).resolve().parents[1]
 # and that a careless .gitignore rule could plausibly swallow.
 REQUIRED = [
     "server.py",
+    "CHANGELOG.md",
     "README.md",
     "CLAUDE.md",
     "NOTES.md",
@@ -38,6 +40,22 @@ REQUIRED = [
 
 # And files that must NOT be in a clone: local strategy notes and secrets.
 FORBIDDEN = ["CONTEXT.md", "ZUDDL.md", ".env"]
+
+
+def platform_line() -> str:
+    """What this check actually validated, and on what.
+
+    Printed because a green run here is evidence about ONE platform. The kill
+    path is a Windows Job Object; elsewhere it falls back to a process group,
+    which does not die with its creator, and `test_hard_kill.py` skips rather
+    than pretending otherwise. A reader seeing "passed" without seeing where
+    would reasonably read it as a claim about their machine.
+    """
+    return (f"platform: {platform.system()} {platform.release()} "
+            f"({platform.machine()}) | python {sys.version.split()[0]}"
+            + ("" if platform.system() == "Windows"
+               else " | NOT the supported platform -- worker kill degrades to a "
+                    "process group here, untested"))
 
 
 def step(label: str) -> None:
@@ -82,6 +100,7 @@ def main() -> int:
 
     workdir = Path(tempfile.mkdtemp(prefix="subagents-install-"))
     clone = workdir / "subagents-mcp"
+    print(platform_line())
     print(f"clone target: {clone}")
 
     try:

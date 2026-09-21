@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,7 +25,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
-from subagents import __version__
+from subagents import __version__, cache
 from subagents.client_config import apply_timeout, detect_timeout, recommended_block
 from subagents.config import load_config, unknown_keys
 from subagents.errors import PlanRefused
@@ -201,9 +204,52 @@ def _report(message: str) -> None:
     sys.stderr.write(message + "\n")
 
 
+def check_agy() -> bool:
+    """Is the CLI this whole server delegates to actually runnable?
+
+    `--check-config` validated the client's JSON and never checked the binary
+    every worker depends on, which is the single most likely first-run failure
+    for someone who is not me: `agy` installed somewhere else, or not at all.
+    A wrong answer here surfaces much later as `spawn_error` on every task.
+
+    Reported, never thrown. Config checking has to keep working on a machine
+    where the CLI is not installed yet -- that user needs the report most.
+    """
+    resolved = shutil.which(CONFIG.agy_path) or (
+        CONFIG.agy_path if Path(CONFIG.agy_path).is_file() else None
+    )
+    if resolved is None:
+        _report(f"  agy: NOT FOUND -- {CONFIG.agy_path!r} is not on PATH and is not a file.")
+        _report("  Every worker would fail to spawn. Set SUBAGENTS_AGY_PATH in .env")
+        _report("  to the absolute path of the CLI.")
+        return False
+    try:
+        proc = subprocess.run([resolved, "--version"], capture_output=True, text=True,
+                              timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        _report(f"  agy: found at {resolved} but would not run -- {exc}")
+        return False
+    if proc.returncode != 0:
+        _report(f"  agy: {resolved} exited {proc.returncode} on --version")
+        return False
+    _report(f"  agy: {(proc.stdout or proc.stderr).strip() or '(no version output)'}")
+    _report(f"       {resolved}")
+    return True
+
+
 def check_config() -> int:
-    """Report the deadline the client will actually enforce."""
+    """Report the deadline the client will actually enforce, and the CLI."""
     found = CLIENT_TIMEOUT
+    _report(f"platform: {platform.system()} {platform.release()} | python {sys.version.split()[0]}")
+    if platform.system() != "Windows":
+        # Stated rather than discovered later. The kill path here is a process
+        # group, which does NOT die with its creator -- so a hard kill of this
+        # server can leave workers running. test_hard_kill.py skips off Windows
+        # because the guarantee does not exist to test.
+        _report("  NOTE: measured and supported on Windows. Elsewhere the worker kill")
+        _report("  falls back to a process group, which survives a hard kill of this")
+        _report("  server. Untested on this platform -- see README, Platform.")
+    agy_ok = check_agy()
     _report(f"config: {found.config_path}")
 
     if not found.readable:
@@ -235,7 +281,9 @@ def check_config() -> int:
         return 1
 
     _report(f"  OK -- fits a single worker ({one_worker}s); multi-wave plans may still exceed it.")
-    return 0
+    # The deadline can be perfect and the install still unusable. Both have to
+    # hold for exit 0 to mean "this will work".
+    return 0 if agy_ok else 1
 
 
 def fix_config() -> int:
@@ -248,11 +296,26 @@ def fix_config() -> int:
     return 0
 
 
+def prune_cache() -> int:
+    """Drop expired entries and say what is left.
+
+    Execution prunes on its own before anything spawns; this is for a human who
+    wants to know what the cache is holding, or wants it gone after changing
+    something the key does not cover.
+    """
+    removed = cache.prune(CONFIG)
+    _report(f"cache: pruned {removed} expired entr{'y' if removed == 1 else 'ies'}, "
+            f"{cache.count(CONFIG)} live (ttl={CONFIG.cache_ttl_s}s)")
+    return 0
+
+
 def main() -> None:
     if "--check-config" in sys.argv:
         raise SystemExit(check_config())
     if "--fix-config" in sys.argv:
         raise SystemExit(fix_config())
+    if "--prune-cache" in sys.argv:
+        raise SystemExit(prune_cache())
 
     # The effective values, not just the paths. A .env that failed to apply --
     # a BOM, a typo, a server not restarted -- is otherwise indistinguishable
@@ -260,7 +323,7 @@ def main() -> None:
     # runs for the wrong length of time. See NOTES.md section 23.
     log.info(
         "subagents %s starting | python=%s | db=%s | roots=%s | "
-        "worker_timeout=%ss | max_parallel=%s | model=%s",
+        "worker_timeout=%ss | max_parallel=%s | model=%s | cache_ttl=%ss",
         __version__,
         sys.version.split()[0],
         CONFIG.db_path,
@@ -268,6 +331,7 @@ def main() -> None:
         CONFIG.worker_timeout_s,
         CONFIG.max_parallel,
         CONFIG.model,
+        CONFIG.cache_ttl_s,
     )
     for key in unknown_keys(CONFIG._dotenv):
         log.warning(".env sets %s, which this server never reads -- misspelled?", key)

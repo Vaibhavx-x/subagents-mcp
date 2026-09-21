@@ -7,6 +7,10 @@ the approval prompt.
 
 from __future__ import annotations
 
+import sqlite3
+import subprocess
+from dataclasses import replace
+
 import anyio
 import pytest
 from conftest import task_entry, tasks_json
@@ -276,3 +280,62 @@ def test_progress_notifications_actually_reach_the_client(cfg, workspace, fake_w
     assert [p for p, _, _ in seen] == [1, 2], f"expected one per wave, got {seen}"
     assert all(total == 2 for _, total, _ in seen)
     assert any("wave" in (msg or "") for _, _, msg in seen)
+
+
+# ----------------------------------------------------- the first-run failure
+def test_check_agy_reports_a_missing_binary_rather_than_raising(monkeypatch, capsys):
+    """`--check-config` validated the client's JSON for four phases and never
+    checked the CLI every worker depends on -- which is the most likely thing
+    to be wrong on somebody else's machine, and which otherwise surfaces much
+    later as `spawn_error` on every task.
+
+    Reported, never thrown: config checking has to keep working on a machine
+    where agy is not installed yet, because that user needs the report most.
+    """
+    monkeypatch.setattr(server, "CONFIG",
+                        replace(server.CONFIG, agy_path="definitely-not-a-real-binary"))
+    monkeypatch.setattr(server.shutil, "which", lambda _: None)
+
+    assert server.check_agy() is False
+    err = capsys.readouterr().err
+    assert "NOT FOUND" in err
+    assert "SUBAGENTS_AGY_PATH" in err
+
+
+def test_check_agy_accepts_a_binary_that_runs(monkeypatch, capsys):
+    monkeypatch.setattr(server.shutil, "which", lambda _: "/fake/agy")
+    monkeypatch.setattr(
+        server.subprocess, "run",
+        lambda *a, **kw: subprocess.CompletedProcess(a[0], 0, "1.2.7\n", ""),
+    )
+    assert server.check_agy() is True
+    assert "1.2.7" in capsys.readouterr().err
+
+
+def test_check_agy_reports_a_binary_that_will_not_run(monkeypatch, capsys):
+    """Present on disk and unrunnable is a different failure from absent, and
+    a user who cannot tell them apart chases the wrong thing."""
+    monkeypatch.setattr(server.shutil, "which", lambda _: "/fake/agy")
+
+    def boom(*a, **kw):
+        raise OSError("Exec format error")
+
+    monkeypatch.setattr(server.subprocess, "run", boom)
+    assert server.check_agy() is False
+    assert "would not run" in capsys.readouterr().err
+
+
+def test_prune_cache_works_on_a_database_predating_the_table(tmp_path, monkeypatch,
+                                                             capsys):
+    """Every database written before Phase 5 is still a perfectly good
+    database. `CREATE TABLE IF NOT EXISTS` on each open is the migration path;
+    without it the first --prune-cache raises "no such table"."""
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.execute("CREATE TABLE plans (id TEXT PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(server, "CONFIG", replace(server.CONFIG, db_path=old))
+    assert server.prune_cache() == 0
+    assert "0 live" in capsys.readouterr().err

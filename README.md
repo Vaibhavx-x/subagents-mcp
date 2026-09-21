@@ -203,8 +203,9 @@ The server reads the client's config and reports the deadline that will really
 apply, so you never have to guess:
 
 ```bash
-python server.py --check-config     # exit 0 = configured adequately
+python server.py --check-config     # exit 0 = configured adequately AND agy runs
 python server.py --fix-config       # set timeoutSeconds to 900 (backs the file up)
+python server.py --prune-cache      # drop expired reuse entries; report what is live
 ```
 
 `--fix-config` is deliberate and never automatic. The client reads its config
@@ -342,9 +343,27 @@ hashing**, which detects changes only to paths we thought to hash.
 | `NOTES.md` | Every assumption that turned out wrong, and what overturned it. |
 | `CLAUDE.md` | The v2-only SDK rules and design invariants the build must hold. |
 
-## Environment
+## Environment and platform
 
-Windows 11, Python 3.13, `mcp` 2.2.0, `agy` CLI 1.2.6, MCP protocol
-`2026-07-28`. SDK **v2** — see `CLAUDE.md`, the v1 API is a trap here.
+Python 3.13, `mcp` 2.2.0, `agy` CLI 1.2.7, MCP protocol `2026-07-28`. SDK
+**v2** — see `CLAUDE.md`, the v1 API is a trap here.
 
-Copy `.env.example` to `.env` and edit before running anything.
+**Measured and supported on Windows 11.** It runs elsewhere and the suite
+passes, but one guarantee is weaker and the difference is worth stating rather
+than discovering: killing a worker uses a Windows **Job Object**, so a hard
+kill of the server takes the whole process tree with it. On POSIX the fallback
+is a process group, which does **not** die with its creator — a hard-killed
+server can leave workers running. `tests/test_hard_kill.py` skips off Windows
+because the guarantee does not exist there to test, and
+`tools/install_check.py` prints the platform it validated on so a green run is
+never mistaken for a claim about every platform.
+
+Copy `.env.example` to `.env` and edit before running anything, then:
+
+```bash
+python server.py --check-config
+```
+
+which now also resolves the `agy` binary and prints its version — a missing
+CLI is the most common first-run failure, and it otherwise surfaces much later
+as `spawn_error` on every task.

@@ -61,3 +61,24 @@ def test_every_required_file_actually_exists_here():
     check for the wrong reason."""
     for name in REQUIRED:
         assert (REPO_ROOT / name).is_file(), name
+
+
+def test_the_platform_is_named_not_assumed():
+    """A green run here is evidence about one platform. The kill guarantee is a
+    Windows Job Object; elsewhere it degrades to a process group that survives
+    its creator, and test_hard_kill.py skips rather than pretend. A reader
+    seeing "passed" without seeing where would read it as a claim about theirs.
+    """
+    import platform
+
+    from install_check import platform_line
+
+    line = platform_line()
+    assert platform.system() in line
+    assert sys.version.split()[0] in line
+    if platform.system() != "Windows":
+        assert "NOT the supported platform" in line
+
+
+def test_the_changelog_is_required_in_a_clone():
+    assert "CHANGELOG.md" in REQUIRED

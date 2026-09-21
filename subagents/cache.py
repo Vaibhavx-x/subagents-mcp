@@ -60,7 +60,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import Config
-from .db import connect, init_db, write_transaction
+from .db import init_db, write_transaction
 from .hashing import Snapshot, sha256_file
 from .models import Task
 
@@ -273,6 +273,11 @@ def prune(config: Config, *, now: datetime | None = None) -> int:
     """
     if not Path(config.db_path).is_file():
         return 0
+    # init_db, not connect: every database written before this table existed is
+    # still a perfectly good database, and `CREATE TABLE IF NOT EXISTS` on each
+    # open IS the migration path. Without this the first --prune-cache against
+    # an install from an earlier phase raises "no such table".
+    init_db(config.db_path).close()
     stamp = (now or _now()).isoformat()
     with write_transaction(config.db_path) as conn:
         cur = conn.execute("DELETE FROM cache_entries WHERE expires_at <= ?", (stamp,))
@@ -287,7 +292,7 @@ def count(config: Config) -> int:
     """Live entries, for the CLI and the tests."""
     if not Path(config.db_path).is_file():
         return 0
-    conn = connect(config.db_path)
+    conn = init_db(config.db_path)
     try:
         return int(conn.execute("SELECT count(*) FROM cache_entries").fetchone()[0])
     except Exception:  # noqa: BLE001 -- no schema yet is not an error
