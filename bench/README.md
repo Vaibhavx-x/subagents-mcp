@@ -97,3 +97,37 @@ python bench/cache/replay.py     # the historical bound; free, no agy
 python bench/cache/measure.py    # cold against warm; ONE worker
 ```
 
+## And whether the work is any GOOD is a fourth
+
+Everything above measures cost. None of it can rank quality -- this bench says
+so itself in section 3: 23 of 23 graded runs passed.
+
+[`quality/`](quality/) scores the output. Two tasks graded mechanically
+against a key generated from the edit that produced it: a defect audit over
+modules with known planted bugs, and an answer sheet whose answers are exact
+strings in the code. Results in [`quality/RESULTS.md`](quality/RESULTS.md).
+
+```bash
+python bench/quality/preflight_all.py --real   # THE GATE: 13 checks, ~15 workers
+python bench/quality/inject.py --check         # the key matches the fixture
+python bench/quality/run_quality.py --repeats 1 --dry --out -   # free rehearsal
+python bench/quality/run_quality.py --repeats 4                 # spends tokens
+python bench/quality/report.py
+```
+
+**It found the ceiling again.** Both arms scored 100% on every run, so quality
+still cannot be ranked -- but the run turned up two things that were worth the
+tokens on their own: delegation is **1.93x slower** on the small task with
+ranges that do not overlap, and a prediction written before the data was wrong
+because `reads[]` is not a boundary and an undeclared read leaves no trace at
+all.
+
+## Which bench answers what
+
+| Question | Where |
+|---|---|
+| Is context the dominant cost? Which worker model? | [`RESULTS.md`](RESULTS.md) |
+| Does delegation reduce the parent's context, and at what cost? | [`ab/RESULTS.md`](ab/RESULTS.md) |
+| How often is finished work asked for twice? | [`cache/RESULTS.md`](cache/RESULTS.md) |
+| Is the delegated work any good, and when does delegating lose? | [`quality/RESULTS.md`](quality/RESULTS.md) |
+

@@ -3,6 +3,39 @@
 What each phase delivered, and what it measured. Every number here is from
 this repo's own runs; the corrections behind them are in `NOTES.md`.
 
+## v1.1 — Phase 6, does it help?
+
+The older benchmarks measured **cost**. This one scores the **output**, which
+`bench/RESULTS.md` §3 admits it cannot: 23 of 23 graded runs passed there.
+
+Two tasks, graded mechanically against a key generated from the edit that
+produced it — a defect audit over modules with known planted bugs, and a
+12-question answer sheet. 16 runs, 4 per cell, 0 void, gated behind
+`bench/quality/preflight_all.py`: 13 checks covering the whole suite, a clean
+clone, and the live worker, cache, taint and MCP probes.
+
+| task | accuracy | parent input | wall clock |
+|---|---|---|---|
+| audit | 100% both arms | **4.22× less** delegating | no difference |
+| extraction | 100% both arms | not measurable | **1.93× SLOWER** delegating |
+
+**Delegation pays off on the big task and loses on the small one** — four
+workers pay ~10 s of startup each to answer twelve questions one agent answers
+in 46 s, ranges apart.
+
+**Accuracy still cannot be ranked.** A calibration gate fired twice; the task
+was hardened once and still hit the ceiling. A third pass would have been
+tuning until the number came out right (§44). The report prints CEILING when
+both arms exceed 90%.
+
+**Two corrections came out of it.** `num_turns` is 1 for every run, so
+input-per-turn is identical to cumulative input and peak context is not
+observable through this interface — every context claim here, including the
+published 1.59×, is cumulative (§46). And a prediction written before the data
+was wrong: two questions built so a single-file worker could not answer them
+were answered anyway, because `reads[]` is not a boundary. **An undeclared
+read changes no mtime and no hash, so taint detection cannot see it** (§47).
+
 ## v1.0 — Phase 5, ship
 
 **Task reuse across plans.** A plan cancelled at the client deadline, or

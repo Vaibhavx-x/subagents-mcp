@@ -10,7 +10,7 @@ parent calls `execute_plan`. Workers run as separate processes, each writing its
 full output to SQLite the moment it finishes and returning only a short summary
 and a handle. `collect` reads results back, **including after a timeout**.
 
-> **Status: v1.0, Phase 5 complete.** Workers in a wave run **concurrently**
+> **Status: v1.1, Phase 6 complete.** Workers in a wave run **concurrently**
 > under a ceiling; every run is hashed before and after and reports what
 > changed against what was declared, with the hashes themselves kept; a failed
 > worker is retried once on a stronger model and its dependants are blocked
@@ -196,7 +196,7 @@ PLAN b42ddb6e9ebb
 ### Running the tests
 
 ```bash
-python -m pytest                    # 397 tests, no API calls
+python -m pytest                    # 453 tests, no API calls
 python tests/smoke_stdio.py         # real subprocess over stdio; exit 0 = clean
 
 SUBAGENTS_REAL_AGY=1 python -m pytest tests/test_real_worker.py   # spends tokens
@@ -317,6 +317,137 @@ The blunt one is `--dangerously-skip-permissions`, which hands **every** tool a
 blank cheque. Prefer the allow-rule: it opens exactly these three tools and
 leaves every other gate standing. Measured 2026-09-20, `NOTES.md` §31 — the
 per-tool spelling is the one that works.
+
+## Using it
+
+### 1. Install
+
+```bash
+git clone https://github.com/Vaibhavx-x/subagents-mcp
+cd subagents-mcp
+python -m pip install mcp            # Python 3.13; the only dependency
+cp .env.example .env                 # then edit it
+```
+
+`.env` needs two things right, and both are absolute paths:
+`SUBAGENTS_AGY_PATH` (where the `agy` binary lives) and
+`SUBAGENTS_ALLOWED_ROOTS` (the only directories a plan may touch). Everything
+else has a working default.
+
+> `.env` is read as **utf-8-sig**, because PowerShell's `Out-File -Encoding
+> utf8` writes a BOM and the first key would otherwise parse as
+> `\ufeffSUBAGENTS_…`, match nothing, and silently use the default. If a
+> setting seems not to apply, that was the cause once already.
+
+### 2. Register the server
+
+Hand-edit `~/.gemini/config/mcp_config.json` — see
+[Required client configuration](#required-client-configuration) for the block
+and why each key matters. `agy mcp add` cannot set `timeoutSeconds`, `cwd` or
+`toolConfig`; it has no flags for them.
+
+**Restart the client afterwards.** It keeps the server process alive across
+chat sessions while refreshing its tool-schema cache separately, so a newly
+registered tool can be visible in the cache and still answer `Unknown tool`.
+
+### 3. Verify before trusting it
+
+```bash
+python server.py --check-config     # deadline + the agy binary, exit 0 = good
+python -m pytest                    # 453 tests, no API calls
+python tests/smoke_stdio.py         # real subprocess over stdio
+```
+
+For a full end-to-end verification against live `agy` — worker lifecycle,
+cache behaviour, taint detection, headless MCP access — there is one command:
+
+```bash
+python bench/quality/preflight_all.py --real     # 13 checks, ~15 workers
+```
+
+It exits non-zero on any failure and prints four things no automation can
+check, as a checklist it explicitly refuses to count as passing.
+
+### 4. Your first fan-out
+
+Ask for delegation explicitly. The tool being registered is **not** enough:
+asked plainly for a task, a parent still does it itself — measured, `NOTES.md`
+§22. Something like:
+
+> Use the subagents MCP server to document these four modules in parallel.
+> Workspace root is `D:/Projects/myrepo`. One task per module, each reading
+> only its own file and writing `docs/<name>.md`. Show me the plan before
+> executing it.
+
+The parent calls `propose_plan` and relays something like:
+
+```
+PLAN b42ddb6e9ebb
+  workspace_root : D:\Projects\myrepo
+  plan_digest    : cf50f7f9cbe1b7dc...
+  tiers          : auto=1, gated=3, never=0
+  schedule       : 4 worker(s) in 1 wave(s), max_parallel=4
+  estimate       : ~40s expected, ~610s worst case
+                   (expected from p90 of 32 local run(s))
+  client deadline : 900s (timeoutSeconds in ~/.gemini/config/mcp_config.json)
+```
+
+Read that before approving: **`tiers`** tells you whether anything destructive
+slipped in, **`schedule`** tells you how many processes are about to start, and
+**`estimate` against `client deadline`** tells you whether it can finish at all.
+
+Then the parent calls `execute_plan` and your client shows a permission prompt.
+It opens with `affects` — a short human-readable description of what will be
+touched. That prompt is the only gate in the system. Approve or decline it.
+
+### 5. Reading what comes back
+
+```
+EXECUTION b42ddb6e9ebb -- complete
+  4/4 worker(s) succeeded
+
+[doc-worker] ok
+  Documented worker.py: 6 functions, 2 dataclasses.
+  tokens: in=31,402 out=1,118
+```
+
+Four things mean more than they look:
+
+| In the output | What it means | What to do |
+|---|---|---|
+| `CACHED` | Not run. That work was already done and its outputs are still in place. | Nothing. It cost zero tokens. |
+| `BLOCKED` | Never started, because a task it depends on failed. | Fix the *upstream* task and re-propose. Re-proposing this one alone blocks again. |
+| `TAINTED` | It changed paths the plan did not declare. **Detected, not prevented.** | Read the named paths before trusting the result. |
+| `NOTE: declared but unchanged` | The worker reported success and the file it was told to write is byte-identical. | Treat as a failure. It probably did nothing. |
+
+**If the call times out:** call `collect(plan_id)` — don't retry
+`execute_plan`. Workers write results the moment they finish, so most of the
+work usually survived. To finish the rest, `propose_plan` again with the same
+tasks: the completed ones come back `CACHED` and cost nothing.
+
+### 6. When something is wrong
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The server shows **zero tools** | Something wrote to stdout; stdout *is* the protocol channel | `python tests/smoke_stdio.py`. Never `print()` in this process. |
+| `Unknown tool`, but the schema exists | The live process predates the registration change | Restart the client. `NOTES.md` §21. |
+| Calls die at exactly 180 s | `timeoutSeconds` unset | `python server.py --fix-config` |
+| Every task comes back `TAINTED` | Something else writes inside the workspace — an editor, a watcher, another MCP server's log | Add globs to `SUBAGENTS_TAINT_IGNORE`. `NOTES.md` §28. |
+| Workers all fail with `spawn_error` | `agy` is not where the config says | `python server.py --check-config` |
+| A setting in `.env` does nothing | A BOM, a typo, or the server not restarted | Unknown keys are warned about at startup; check the log. |
+| `execute_plan` refuses outright | The plan expired, was edited, or you are inside a worker | Call `propose_plan` again. Workers cannot fan out further, by design. |
+
+### 7. When not to use it
+
+Measured, not guessed. **Delegation is a loss on small tasks** — each worker
+costs ~10 s of process startup, so four workers answering twelve quick
+questions took 89.8 s where one agent took 46.4 s
+(`bench/quality/RESULTS.md`).
+
+Use it when the work is genuinely large and splits into parts that are mostly
+independent — several files each needing real reading. Don't use it for a
+single edit, for anything answerable from context already held, or for tasks
+that must share intermediate state as they go.
 
 ## Where the approval gate is
 

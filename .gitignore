@@ -42,3 +42,9 @@ probe/probe.live.log
 
 # Quality-measurement scratch workspaces, materialised per run.
 bench/quality/work/
+
+# Local explainers, kept untracked by request. EXPLAINER.md is the hand-to-
+# someone mechanism walkthrough; TEST-SUMMARY.md collects every measurement
+# in one page. Neither is part of the published repo.
+EXPLAINER.md
+TEST-SUMMARY.md
