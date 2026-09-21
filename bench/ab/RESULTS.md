@@ -40,6 +40,7 @@ Each difference is reported with whether the arms' observed ranges actually sepa
 
 - **n = 5 per arm.** Bench runs varied 110k–305k input tokens per turn. Three runs cannot separate an effect smaller than the spread column, and the spread is printed for exactly that reason.
 - **The arms are not prompt-identical.** A and B receive the same prompt; C's tells it to delegate. That asymmetry *is* the intervention, and it means C is measured doing something the others were never asked to do.
+- **Arm C is measured under close to best-case conditions.** Its prompt also says not to read the source files, which suppresses a real behaviour: given a vaguer request, a parent meeting this server for the first time was observed spending ~16 tool calls reading its schemas, `instructions.md` and its source before delegating (`NOTES.md` §37). That exploration cost is not in these numbers.
 - **All three arms ran with `--dangerously-skip-permissions`.** Without it a headless parent cannot call an MCP tool at all (`NOTES.md` §31). File tools are auto-approved headlessly regardless, so the flag changes nothing for A and B — but no human approval gate was exercised in any of these runs, and that is not the configuration a person running this interactively would have.
 - **One fixture, one language, one model** — `gemini-3.8-flash-low` over four Python modules. Inherited from `bench/RESULTS.md` §3 and still true.
 - **Cache-read is reported separately** and never folded into input tokens.

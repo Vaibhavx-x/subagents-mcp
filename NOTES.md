@@ -845,3 +845,61 @@ when you look again.
 spread" as a caveat, published a 2.06x headline underneath it, and then watched
 it become 1.59x. The caveat was not hedging. It was the more accurate of the
 two statements I made that day.*
+
+## 36. `report_progress` is emitted correctly and rendered by nothing
+
+Closed as a negative, which is still an answer.
+
+The emission half is pinned by a test: the SDK client accepts a
+`progress_callback`, and our notifications demonstrably arrive over the
+protocol, one per wave. Worth having, because `ctx.report_progress` is a
+**coroutine** and the version that forgot to await it sent nothing while
+raising only a warning nobody reads.
+
+The display half was checked twice against the real client, on a two-wave plan
+chosen so the notifications land about fifteen seconds apart with a visible gap
+to fill. Nothing appeared between the `execute_plan` call and its result,
+either time.
+
+The honest epistemic status: scrollback would not retain a transient spinner,
+so this is "no evidence of rendering after two deliberate looks", not "proved
+absent". It is recorded that way rather than as a flat fact.
+
+Nothing depends on it. The calls stay, wrapped in a `try/except` that logs and
+continues, because a client that does render progress costs us nothing and a
+client that raises inside the callback must not lose a run.
+
+*Lesson kept: half of this question was answerable by a test and half needed a
+human watching a screen. Splitting it that way turned an open item into one
+pinned invariant plus one cheap observation, instead of a vague "unknown" that
+sat in the list for three phases.*
+
+## 37. The parent reads the server's source before using it
+
+The progress check was pasted without the framing line, so the parent got a
+bare task description. It delegated anyway -- it found the server, read
+`instructions.md`, and called `propose_plan` correctly.
+
+But look at what it did first: `dir`, the client's MCP cache directory, all
+three tool JSON schemas, `instructions.md`, `.env.example`, an attempted read
+of `.env` (which does not exist), `server.py` twice, `config.py` three times,
+`execution.py` twice, `worker.py` twice, and `Get-Command agy`. Roughly sixteen
+tool calls investigating the orchestrator **before** using it.
+
+Two things follow.
+
+**It qualifies the A/B numbers.** Arm C's prompt says "do not do this work
+yourself, and do not read the source files yourself", which suppresses exactly
+this behaviour. So 1.59x is measured under close to best-case conditions for
+delegation; a parent meeting the server for the first time with a vaguer prompt
+pays an exploration cost we did not measure. Added to the caveats in
+`bench/ab/RESULTS.md`.
+
+**It is the §22 finding again from the other side.** There, a parent given no
+framing did the work itself. Here, a parent given no framing delegated -- but
+paid a large context toll deciding to. Both are the same underlying fact: what
+the parent does with an unfamiliar tool is not something the tool controls.
+
+*Lesson kept: I read the transcript looking for a progress spinner and found a
+caveat about the measurement instead. The thing you went to check is rarely the
+most interesting thing in the log.*

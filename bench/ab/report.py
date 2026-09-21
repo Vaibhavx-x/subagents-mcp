@@ -122,6 +122,11 @@ def build(rows: list[dict]) -> str:
     add("- **The arms are not prompt-identical.** A and B receive the same prompt; C's tells "
         "it to delegate. That asymmetry *is* the intervention, and it means C is measured "
         "doing something the others were never asked to do.")
+    add("- **Arm C is measured under close to best-case conditions.** Its prompt also says "
+        "not to read the source files, which suppresses a real behaviour: given a vaguer "
+        "request, a parent meeting this server for the first time was observed spending "
+        "~16 tool calls reading its schemas, `instructions.md` and its source before "
+        "delegating (`NOTES.md` §37). That exploration cost is not in these numbers.")
     add("- **All three arms ran with `--dangerously-skip-permissions`.** Without it a headless "
         "parent cannot call an MCP tool at all (`NOTES.md` §31). File tools are auto-approved "
         "headlessly regardless, so the flag changes nothing for A and B — but no human "
