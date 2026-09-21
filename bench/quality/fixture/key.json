@@ -1,0 +1,179 @@
+{
+  "modules": [
+    "worker",
+    "execution",
+    "hashing",
+    "db"
+  ],
+  "min_gap": 5,
+  "defects": [
+    {
+      "module": "db",
+      "line": 157,
+      "kind": "foreign keys disabled, silently voiding every referential constraint"
+    },
+    {
+      "module": "db",
+      "line": 189,
+      "kind": "off by one: one fewer lock attempt than the constant promises"
+    },
+    {
+      "module": "db",
+      "line": 196,
+      "kind": "backoff is linear, not exponential, and starts at zero"
+    },
+    {
+      "module": "db",
+      "line": 246,
+      "kind": "zero-length durations enter the estimator's sample"
+    },
+    {
+      "module": "execution",
+      "line": 183,
+      "kind": "expiry comparison reversed: only unexpired plans are refused"
+    },
+    {
+      "module": "execution",
+      "line": 474,
+      "kind": "a timeout now escalates, spending another full budget on more time"
+    },
+    {
+      "module": "execution",
+      "line": 571,
+      "kind": "or became and: the rate-limit retry loop never breaks early"
+    },
+    {
+      "module": "execution",
+      "line": 648,
+      "kind": "attribution claims per-task precision for a whole parallel wave"
+    },
+    {
+      "module": "hashing",
+      "line": 94,
+      "kind": "or became and: ignore globs stop matching almost everything"
+    },
+    {
+      "module": "hashing",
+      "line": 128,
+      "kind": "undeclared changes no longer count as taint -- the detector's main case"
+    },
+    {
+      "module": "hashing",
+      "line": 162,
+      "kind": "a missing file now raises instead of hashing to None"
+    },
+    {
+      "module": "hashing",
+      "line": 182,
+      "kind": "dropped not: the walk descends only into the directories it should skip"
+    },
+    {
+      "module": "worker",
+      "line": 141,
+      "kind": "inverted liveness check: a running process reports as exited"
+    },
+    {
+      "module": "worker",
+      "line": 189,
+      "kind": "success and failure are swapped when classifying agy's status"
+    },
+    {
+      "module": "worker",
+      "line": 276,
+      "kind": "and became or: a healthy run is misread as a timeout"
+    },
+    {
+      "module": "worker",
+      "line": 285,
+      "kind": "dropped not: an empty response passes and a real answer is rejected"
+    }
+  ],
+  "questions": [
+    {
+      "id": 1,
+      "module": "db",
+      "needle": "WRITE_ATTEMPTS = ",
+      "answer": "6",
+      "text": "In db.py, how many attempts does a write transaction make to take the lock?"
+    },
+    {
+      "id": 2,
+      "module": "db",
+      "needle": "PRAGMA busy_timeout=",
+      "answer": "5000",
+      "text": "In db.py, what value is PRAGMA busy_timeout set to?"
+    },
+    {
+      "id": 3,
+      "module": "db",
+      "needle": "PRAGMA journal_mode=",
+      "answer": "WAL",
+      "text": "In db.py, what journal_mode does connect() set?"
+    },
+    {
+      "id": 4,
+      "module": "db",
+      "needle": "conn.execute(\"BEGIN IMMEDIATE\")",
+      "answer": "BEGIN IMMEDIATE",
+      "text": "In db.py, which exact SQL statement starts a write transaction?"
+    },
+    {
+      "id": 5,
+      "module": "worker",
+      "needle": "KILL_GRACE_S = ",
+      "answer": "20",
+      "text": "In worker.py, what is the value of KILL_GRACE_S?"
+    },
+    {
+      "id": 6,
+      "module": "worker",
+      "needle": "AGY_TIMEOUT_BANNER = ",
+      "answer": "print timeout after",
+      "text": "In worker.py, what exact string is AGY_TIMEOUT_BANNER?"
+    },
+    {
+      "id": 7,
+      "module": "worker",
+      "needle": "return code.value == 259",
+      "answer": "259",
+      "text": "In worker.py, which numeric exit code means a process is still running?"
+    },
+    {
+      "id": 8,
+      "module": "hashing",
+      "needle": "_READ_CHUNK = ",
+      "answer": "1 << 20",
+      "text": "In hashing.py, what is _READ_CHUNK set to? Give the expression as written."
+    },
+    {
+      "id": 9,
+      "module": "hashing",
+      "needle": "DEFAULT_IGNORE_GLOBS = ",
+      "answer": "*.log",
+      "text": "In hashing.py, what is the FIRST pattern in DEFAULT_IGNORE_GLOBS?"
+    },
+    {
+      "id": 10,
+      "module": "execution",
+      "needle": "SCOPE_SUMMARY_MAX = ",
+      "answer": "300",
+      "text": "In execution.py, what is SCOPE_SUMMARY_MAX?"
+    },
+    {
+      "id": 11,
+      "module": "worker",
+      "needle": "KILL_GRACE_S = ",
+      "answer": "20",
+      "spans": "execution",
+      "text": "execution.py kills a worker at config.worker_timeout_s + KILL_GRACE_S. What is the numeric value of KILL_GRACE_S?"
+    },
+    {
+      "id": 12,
+      "module": "db",
+      "needle": "WRITE_BACKOFF_S = ",
+      "answer": "0.05",
+      "spans": "execution",
+      "text": "execution.py persists each worker's result through db.write_transaction, which backs off before retrying a locked database. What is the base backoff in seconds?"
+    }
+  ]
+}
