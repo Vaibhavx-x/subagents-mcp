@@ -1175,3 +1175,72 @@ p90 (section 0.3), and a token budget, each time by reusing a measurement from
 a task that looked similar. The shape of the work matters more than the size
 of the input.*
 
+## 46. The metric I added to fix a known flaw turned out to be degenerate
+
+`parent_in` is **cumulative** input across turns, not peak context occupancy.
+Ten turns of 20k and two turns of 100k both total 200k, and only the second
+fills a window. Since the whole project claims to keep the parent's context
+clean, that gap matters, so Phase 6 recorded `num_turns` and reported
+input-per-turn beside the total as the closer proxy.
+
+It came back **1 for all 16 runs.** agy reports an entire `--print` run as a
+single turn, so input-per-turn is arithmetically identical to cumulative
+input, and the distinction the column exists to draw is not observable through
+this interface at all.
+
+Kept in the table, with that stated. A column dropped because it failed to
+discriminate is a column nobody can check afterwards, and the reason it failed
+is itself a fact about the measurement: *this interface cannot tell you about
+peak context.* Every context claim in this repo -- including the published
+1.59x -- is therefore about cumulative input, and always was. Phase 6 is the
+first place that is written down.
+
+*Lesson kept: I built the fix before checking whether the data supported it.
+One `SELECT DISTINCT num_turns` against the existing A/B database would have
+cost nothing and told me the same thing before I wrote the column.*
+
+## 47. The cross-module questions failed to hurt, for the wrong reason
+
+Predicted in the plan, before the data: *"delegation does slightly worse on
+extraction. Each worker sees one module and cannot cross-reference, and some
+questions will need two."* Two of the twelve questions were built specifically
+to need two -- their answers live in a module other than the one the question
+concerns.
+
+Arm C scored **12/12 on every run.** The prediction was wrong.
+
+It was wrong because the premise was wrong, and the premise was something this
+repo documents in three places. **A worker is not confined to its declared
+reads.** `--add-dir` is additive scope, `--sandbox` restricts terminal
+commands only, and `--print` mode has no permission gate at all (section 15,
+CLAUDE.md section 6c). `reads[]` drives wave scheduling and taint verification.
+It has never been a boundary, and I designed an experiment that assumed it was.
+
+The evidence is structured, not inferred from prose:
+
+| extract worker | questions | median input tokens |
+|---|---|---|
+| `ask-db` | 4 | 82,045 |
+| **`ask-execution`** | **4** | **143,194** |
+| `ask-worker` | 2 | 53,440 |
+| `ask-hashing` | 2 | 56,343 |
+
+`ask-execution` is the worker holding both cross-module questions. It carries
+the same question count as `ask-db` and **1.7x its input**. File size does not
+explain it: in the audit task, where no worker needs another's file, the
+largest module (`execution.py`, 791 lines) used *fewer* tokens than the
+smallest (`db.py`, 248).
+
+The sharper consequence is about the detector rather than the experiment.
+**An undeclared read leaves no trace whatsoever.** Taint hashes declared paths
+and manifests the tree for undeclared *writes* -- a read changes no mtime, no
+hash, nothing. The server cannot see this happened, and the only reason I can
+is that agy reports its own token usage. So the honest statement of what
+`reads[]` means gets one more line: it is a scheduling input and a taint
+baseline, and it is not a description of what the worker actually read.
+
+*Lesson kept: I wrote "there is no filesystem containment" into the README
+myself, twice, and then built a measurement whose central test depended on
+containment existing. Knowing a fact and designing around it are different
+things.*
+

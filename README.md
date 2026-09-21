@@ -57,6 +57,37 @@ Three things that table says which a friendlier one would not:
   above is. See `NOTES.md` §35 — the caveat about small samples was written
   before the data and then proved itself.
 
+### Is the delegated work any good?
+
+The table above is cost. `bench/quality/RESULTS.md` scores the **output**, on
+two tasks graded mechanically against a key generated from the edit that made
+it -- a defect audit over modules with known planted bugs, and an answer sheet
+whose answers are exact strings in the code. Sixteen runs, four per cell, none
+void.
+
+| task | accuracy | parent input | wall clock |
+|---|---|---|---|
+| **audit** (4 modules, 12 defects) | 100% both arms | **4.22x less** delegating | no difference |
+| **extraction** (12 questions) | 100% both arms | not measurable | **1.93x SLOWER** delegating |
+
+Three things that says which a friendlier summary would not:
+
+- **Accuracy did not separate.** Both arms scored perfectly on every run, so
+  this measures cost and *still* cannot rank quality -- the same limitation the
+  older bench admits. The task was hardened once and still hit the ceiling; a
+  third pass would have been tuning until the number came out right
+  (`NOTES.md` §44).
+- **On the small task delegation is nearly twice as slow**, with ranges that
+  do not overlap. Four workers pay ~10s of process startup each to answer
+  twelve questions one agent answers in 46 seconds. Delegation pays off on the
+  task that is genuinely big; on the small one it is a loss.
+- **A prediction written before the data was wrong, and the reason matters.**
+  Two questions were designed so a worker holding one file could not answer
+  them. It answered them anyway -- because `reads[]` is not a boundary and
+  workers read what they like. **An undeclared read leaves no trace at all**:
+  it changes no mtime and no hash, so taint detection cannot see it
+  (`NOTES.md` §47).
+
 ## What works today
 
 All three tools, end to end against a real worker, with the workers in a wave
@@ -375,6 +406,7 @@ hashing**, which detects changes only to paths we thought to hash.
 | `bench/` | Worker model benchmark, with `RESULTS.md` and the audited harness. |
 | `bench/ab/` | The three-arm comparison: what delegation costs and saves, with `RESULTS.md` and a scripted out-of-scope demo. |
 | `bench/cache/` | How often finished work is asked for twice, and what it costs when it is. |
+| `bench/quality/` | Whether the delegated work is any *good*: two mechanically graded tasks, with and without the tool. |
 | `CHANGELOG.md` | What each phase delivered and what it measured. |
 | `tools/` | `inspect_db.py` (what a run recorded) and `install_check.py` (does a clean clone work for someone else). |
 | `NOTES.md` | Every assumption that turned out wrong, and what overturned it. |

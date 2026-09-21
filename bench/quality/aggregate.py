@@ -15,6 +15,7 @@ pressure. Neither number alone answers "did the parent's context stay clean".
 from __future__ import annotations
 
 import csv
+import statistics
 import sys
 from pathlib import Path
 
@@ -98,7 +99,10 @@ def summarise_task(rows: list[dict]) -> dict:
             "parent_out": median_of(ok, "parent_out"),
             "parent_cache_read": median_of(ok, "parent_cache_read"),
             "num_turns": median_of(ok, "num_turns"),
-            "in_per_turn": (sorted(turns)[len(turns) // 2] if turns else None),
+            # statistics.median, not sorted()[n//2]: at an even n those differ,
+            # and the second one silently disagreed with every other median in
+            # this table -- it reported 386,517 where the median was 295,038.
+            "in_per_turn": (statistics.median(turns) if turns else None),
             "in_per_turn_spread": ((min(turns), max(turns)) if turns else None),
             "worker_in": median_of(ok, "worker_in"),
             "worker_out": median_of(ok, "worker_out"),
@@ -144,6 +148,19 @@ def deltas(summary: dict) -> dict:
     if a["total_in"] and c["total_in"]:
         out["total_cost_ratio"] = c["total_in"] / a["total_in"]
     return out
+
+
+def turns_are_degenerate(rows: list[dict]) -> bool:
+    """Did every run report exactly one turn?
+
+    agy reports a whole `--print` run as a single turn, which makes
+    input-per-turn identical to cumulative input and therefore useless as the
+    peak-context proxy it was added to be. Reported rather than dropped: a
+    column removed because it did not discriminate is a column nobody can
+    check (NOTES.md section 46).
+    """
+    values = {(r.get("num_turns") or "").strip() for r in rows}
+    return values <= {"1", ""}
 
 
 def ceiling_warning(summary: dict) -> str:
