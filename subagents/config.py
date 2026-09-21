@@ -33,6 +33,20 @@ RATE_LIMIT_BACKOFF_S = 5
 # `timeoutSeconds` is set in mcp_config.json. Measured, not documented.
 DEFAULT_TOOL_DEADLINE_S = 180
 
+# How long a finished task stays reusable.
+#
+# The TTL's job is to bound the window in which an UNRECORDED side effect can
+# be skipped. A cache hit asserts that every declared write is already in the
+# state that run left it -- which is checkable -- and asserts nothing at all
+# about effects the plan never declared, such as a test suite the worker ran or
+# a package it installed. There is no way to verify those, so instead they are
+# given a short shelf life.
+#
+# An hour covers the case the cache exists for -- a plan cancelled at the
+# deadline, or tainted, and re-proposed minutes later under a new plan id --
+# without letting a hit survive a working session. 0 disables the cache.
+DEFAULT_CACHE_TTL_S = 3600
+
 
 # Every key this server reads. Used only to warn about the ones it does not:
 # a misspelled key is otherwise a setting that never takes effect, which is the
@@ -42,7 +56,7 @@ KNOWN_KEYS = frozenset({
     "SUBAGENTS_DB_PATH", "SUBAGENTS_MODEL", "SUBAGENTS_MODEL_ESCALATE",
     "SUBAGENTS_WORKER_TIMEOUT_S", "SUBAGENTS_MAX_PARALLEL",
     "SUBAGENTS_PLAN_TTL_S", "SUBAGENTS_LOG_FILE", "SUBAGENTS_LOG_LEVEL",
-    "SUBAGENTS_TAINT_IGNORE", "SUBAGENTS_DEPTH",
+    "SUBAGENTS_TAINT_IGNORE", "SUBAGENTS_CACHE_TTL_S", "SUBAGENTS_DEPTH",
 })
 
 
@@ -98,6 +112,7 @@ class Config:
     log_file: Path
     log_level: str
     agy_path: str
+    cache_ttl_s: int = DEFAULT_CACHE_TTL_S
     taint_ignore: tuple[str, ...] = ()
     _dotenv: dict[str, str] = field(default_factory=dict, repr=False, compare=False)
 
@@ -134,6 +149,7 @@ def load_config(env_file: Path | None = None) -> Config:
         log_file=log_file,
         log_level=_get("SUBAGENTS_LOG_LEVEL", "INFO", dotenv),
         agy_path=_get("SUBAGENTS_AGY_PATH", "agy", dotenv),
+        cache_ttl_s=max(0, int(_get("SUBAGENTS_CACHE_TTL_S", str(DEFAULT_CACHE_TTL_S), dotenv))),
         taint_ignore=tuple(
             p.strip() for p in _get("SUBAGENTS_TAINT_IGNORE", "", dotenv).split(";") if p.strip()
         ),

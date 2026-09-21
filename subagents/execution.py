@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import cache
+from .cache import CacheHit
 from .config import RATE_LIMIT_ATTEMPTS, RATE_LIMIT_BACKOFF_S, Config
 from .db import connect, init_db, write_transaction
 from .digest import compute_digest
@@ -68,6 +70,10 @@ class ExecutionOutcome:
     blocked: list[tuple[str, str]] = field(default_factory=list)
     taints: dict[str, TaintReport] = field(default_factory=dict)
     escalated: list[str] = field(default_factory=list)
+    # Tasks served from a previous run instead of spawned. Kept apart from
+    # `results` on purpose: these are not workers, and folding them in would
+    # make `workers_completed` count work that no process did.
+    cached: dict[str, CacheHit] = field(default_factory=dict)
 
     @property
     def completed(self) -> int:
@@ -351,6 +357,49 @@ def persist_verdict(config: Config, plan_id: str, task: Task, report: TaintRepor
         )
 
 
+def persist_cached(config: Config, plan_id: str, task: Task, wave_index: int,
+                   hit: CacheHit) -> None:
+    """Record a task served from cache as a real, readable row.
+
+    Two deliberate choices about what goes in it.
+
+    **Zero tokens, not the original run's counts.** Copying them would inflate
+    every total in this database with spend that did not happen -- the exact
+    dishonesty CLAUDE.md section 8b names. Zero is a measurement: this
+    execution spent nothing on this task.
+
+    **No started_at or finished_at.** A cached task has no duration, and
+    `db.completed_worker_durations` selects on those columns being present --
+    so writing "now to now" would feed a stream of ~0s samples into the p90
+    estimator and drag every future estimate toward zero. The estimator has to
+    keep predicting how long WORK takes, not how fast a lookup is.
+    """
+    with write_transaction(config.db_path) as conn:
+        conn.execute(
+            "INSERT INTO runs (id, plan_id, task_ref, wave_index, instruction,"
+            " declared_reads, declared_writes, model_requested, model_used, status,"
+            " tokens_in, tokens_out, thinking_tokens, cache_read_tokens, exit_reason,"
+            " tainted)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,0,0,0,0,?,0)"
+            " ON CONFLICT(plan_id, task_ref) DO UPDATE SET"
+            "   status=excluded.status, exit_reason=excluded.exit_reason,"
+            "   tokens_in=0, tokens_out=0, thinking_tokens=0, cache_read_tokens=0",
+            (uuid.uuid4().hex[:12], plan_id, task.task_ref, wave_index, task.instruction,
+             json.dumps(list(task.reads)), json.dumps(list(task.writes)), task.model,
+             "cache", "ok", hit.describe()),
+        )
+        actual = conn.execute(
+            "SELECT id FROM runs WHERE plan_id = ? AND task_ref = ?",
+            (plan_id, task.task_ref),
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO results (run_id, content, content_bytes, summary, created_at)"
+            " VALUES (?,?,?,?,?)",
+            (actual, hit.content, len(hit.content.encode("utf-8")), hit.summary,
+             _now().isoformat()),
+        )
+
+
 def persist_blocked(config: Config, plan_id: str, task: Task, wave_index: int,
                     upstream: str) -> None:
     """A task that never ran still gets a row, with the reason.
@@ -480,6 +529,10 @@ async def execute(
     waves = group_into_waves(stored)
     depends_on = downstream_of(stored.tasks)
     ignore = IgnoreSpec.for_config(config)
+    # Before anything spawns, so an expired entry is never something a reader
+    # of this database has to reason about -- and so a cancellation cannot
+    # leave a half-pruned table behind.
+    await asyncio.to_thread(cache.prune, config)
     execution_id = _record_execution(config, plan_id, summary)
 
     result = ExecutionOutcome(plan_id=plan_id, outcome="complete")
@@ -539,6 +592,25 @@ async def execute(
                     await asyncio.to_thread(persist_blocked, config, plan_id, task,
                                             wave_index, upstream[0])
                     continue
+
+                # Checked AFTER blocking, never before: a task whose upstream
+                # failed stays blocked even when its own work is on record,
+                # because the state it would read is not the state the cached
+                # run saw.
+                hit = await asyncio.to_thread(
+                    cache.lookup, config, task, stored.workspace_root,
+                    task.model or config.model,
+                )
+                if hit is not None:
+                    log.info("plan %s: %s served from cache (%s)",
+                             plan_id, task.task_ref, hit.describe())
+                    result.cached[task.task_ref] = hit
+                    await asyncio.to_thread(persist_cached, config, plan_id, task,
+                                            wave_index, hit)
+                    # A success for dependency purposes: every declared write
+                    # was verified present before the hit was served, so a
+                    # downstream reader has real state to read.
+                    continue
                 runnable.append(task)
 
             if not runnable:
@@ -579,6 +651,15 @@ async def execute(
                 result.results.append(worker_result)
                 if not worker_result.ok:
                     failed.add(task.task_ref)
+                # Keyed on the model REQUESTED, never on `model_used`. A
+                # lookup happens before any worker exists, so the requested
+                # model is the only one it can know -- keying the entry on what
+                # agy reported back would produce a key nothing ever asks for.
+                await asyncio.to_thread(
+                    cache.record, config, plan_id, task, stored.workspace_root,
+                    task.model or config.model, before,
+                    tainted=report.tainted, ok=worker_result.ok,
+                )
 
             waves_done += 1
             await report_progress(waves_done, len(waves),
@@ -657,6 +738,17 @@ async def _escalate_wave(runnable, worker_results, result, config, plan_id,
                         report.describe())
         await asyncio.shield(
             asyncio.to_thread(persist_verdict, config, plan_id, task, report, before, after)
+        )
+
+        # Recorded against the escalation model, which is what was requested
+        # here -- so a later plan asking for the default model MISSES and runs
+        # the task properly. The success on record was only achieved by the
+        # stronger model; serving it as though the cheap one had produced it
+        # would be a promise this cannot keep.
+        await asyncio.to_thread(
+            cache.record, config, plan_id, task, workspace_root,
+            config.model_escalate, before,
+            tainted=report.tainted, ok=retry.ok,
         )
 
         attempts += 1

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import cache
 from .client_config import ClientTimeout
 from .config import Config
 from .db import init_db
@@ -37,10 +39,16 @@ class ProposedPlan:
     tiers: dict[str, Tier]
     estimate: Estimate
     warnings: list[str]
+    # Task refs whose work already appears to be done. A FORECAST --
+    # execute_plan re-checks, because files can change in between.
+    cached_refs: tuple[str, ...] = ()
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+log = logging.getLogger("subagents.planning")
 
 
 def parse_tasks_json(raw: str) -> list[dict]:
@@ -129,6 +137,32 @@ def build_tasks(raw_tasks: list[dict], root: Path, default_model: str) -> list[T
     return tasks
 
 
+def forecast_cache_hits(tasks: list[Task], root: Path, config: Config) -> tuple[str, ...]:
+    """Which tasks look already done, for the human reading the plan.
+
+    A FORECAST, never a promise. `propose_plan` and `execute_plan` are separate
+    calls with a human approval in between, and a file can change in that gap --
+    so this is re-checked at execution and can differ. The rendered line says
+    so, because a number the reader believes is a guarantee is worse than no
+    number at all.
+
+    It matters at approval time even so: a human about to approve "4 workers"
+    should know that two of them will not run.
+
+    Never fatal. `propose_plan` is the read-only tool and must not start
+    failing because a cache lookup hit a locked database or an unreadable file.
+    """
+    hits: list[str] = []
+    for task in tasks:
+        try:
+            if cache.lookup(config, task, root, task.model or config.model) is not None:
+                hits.append(task.task_ref)
+        except Exception:  # noqa: BLE001 -- a forecast must never break the plan
+            log.warning("cache forecast failed for %s; assuming it will run",
+                        task.task_ref, exc_info=True)
+    return tuple(hits)
+
+
 def propose(
     tasks_json: str,
     workspace_root: str,
@@ -148,8 +182,14 @@ def propose(
         raise PlanRefused("plan contains never-tier actions", "; ".join(never_reasons))
 
     waves = group_into_waves(tasks)
+    cached_refs = forecast_cache_hits(tasks, root, config)
+    # Estimated over what will actually spawn. A plan that will run two workers
+    # must not warn about a deadline for four -- the warning is the thing that
+    # sends a user to edit their client config, and crying wolf spends that.
+    # Empty waves drop out: a wave nothing runs in costs no spawn overhead.
+    to_run = [[t for t in wave if t.task_ref not in cached_refs] for wave in waves]
     estimate = estimate_plan(
-        waves,
+        [wave for wave in to_run if wave],
         max_parallel=config.max_parallel,
         worker_timeout_s=config.worker_timeout_s,
         client_timeout=client_timeout,
@@ -174,6 +214,7 @@ def propose(
         tiers=tiers,
         estimate=estimate,
         warnings=warnings,
+        cached_refs=cached_refs,
     )
     _persist(plan, tasks, config)
     return plan
@@ -238,6 +279,13 @@ def render(plan: ProposedPlan) -> str:
         f"  schedule       : {plan.estimate.worker_count} worker(s) in "
         f"{plan.estimate.wave_count} wave(s), max_parallel={plan.estimate.max_parallel}"
     )
+    if plan.cached_refs:
+        total = sum(len(wave) for wave in plan.waves)
+        add(
+            f"  cache          : {len(plan.cached_refs)} of {total} task(s) already done "
+            f"({', '.join(plan.cached_refs)})"
+        )
+        add("                   forecast only -- re-checked when you execute")
     add(
         f"  estimate       : ~{plan.estimate.expected_s}s expected, "
         f"~{plan.estimate.worst_case_s}s worst case"
@@ -250,7 +298,8 @@ def render(plan: ProposedPlan) -> str:
         how = "in parallel" if len(wave) > 1 else "alone"
         add(f"WAVE {index} ({len(wave)} task(s), {how})")
         for task in wave:
-            add(f"  [{task.task_ref}] tier={plan.tiers[task.task_ref].name.lower()}")
+            mark = " -- CACHED, will not run" if task.task_ref in plan.cached_refs else ""
+            add(f"  [{task.task_ref}] tier={plan.tiers[task.task_ref].name.lower()}{mark}")
             add(f"      {task.instruction}")
             add(f"      reads : {', '.join(task.reads) if task.reads else '(none)'}")
             add(f"      writes: {', '.join(task.writes) if task.writes else '(none)'}")

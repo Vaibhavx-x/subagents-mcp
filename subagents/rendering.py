@@ -37,6 +37,7 @@ def render_execution(outcome: ExecutionOutcome) -> str:
     ran = len(outcome.results)
     add(f"EXECUTION {outcome.plan_id} -- {outcome.outcome}")
     add(f"  {outcome.completed}/{ran} worker(s) succeeded"
+        + (f", {len(outcome.cached)} served from cache" if outcome.cached else "")
         + (f", {len(outcome.skipped)} skipped (already complete)" if outcome.skipped else ""))
     add("")
 
@@ -68,6 +69,17 @@ def render_execution(outcome: ExecutionOutcome) -> str:
                 add(f"    ... and {len(report.paths) - 5} more")
         add("")
 
+    if outcome.cached:
+        # Named rather than counted, and never folded in with the workers. A
+        # cached task cost nothing and produced nothing new, and a reader who
+        # cannot tell which is which has been told less than they think.
+        add("CACHED (not run -- the declared outputs were already in place):")
+        for task_ref, hit in sorted(outcome.cached.items()):
+            add(f"  [{task_ref}] {hit.describe()}")
+            if hit.summary:
+                add(f"    {hit.summary}")
+        add("")
+
     if outcome.blocked:
         add("BLOCKED (never started):")
         for task_ref, upstream in outcome.blocked:
@@ -90,6 +102,10 @@ def render_execution(outcome: ExecutionOutcome) -> str:
         add("")
 
     failed = [r.task_ref for r in outcome.results if not r.ok]
+    if not failed and not outcome.blocked and outcome.cached and not outcome.results:
+        add(f"Nothing was run: every task was already done. "
+            f"Full transcripts: collect({outcome.plan_id})")
+        return "\n".join(lines)
     if failed or outcome.blocked:
         stuck = failed + [ref for ref, _ in outcome.blocked]
         add(f"NOT COMPLETE: {', '.join(sorted(stuck))}")

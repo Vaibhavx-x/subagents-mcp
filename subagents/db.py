@@ -118,12 +118,26 @@ CREATE TABLE IF NOT EXISTS executions (
     waves_completed   INTEGER NOT NULL DEFAULT 0
 );
 
+-- A key and a pointer, never a copy. The transcript stays in `results` and
+-- the hashes stay in `file_hashes`, so this table cannot drift out of
+-- agreement with the audit trail -- it is an index over it, not a second copy
+-- of it. ON DELETE CASCADE means pruning a plan prunes its entries.
+CREATE TABLE IF NOT EXISTS cache_entries (
+    key_hash   TEXT PRIMARY KEY,
+    run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    task_ref   TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_plan     ON runs(plan_id);
 CREATE INDEX IF NOT EXISTS idx_results_run   ON results(run_id);
 CREATE INDEX IF NOT EXISTS idx_hashes_run    ON file_hashes(run_id);
+CREATE INDEX IF NOT EXISTS idx_cache_expiry  ON cache_entries(expires_at);
 """
 
-TABLES = ("plans", "runs", "results", "file_hashes", "violations", "executions")
+TABLES = ("plans", "runs", "results", "file_hashes", "violations", "executions",
+          "cache_entries")
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
