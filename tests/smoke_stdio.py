@@ -14,7 +14,9 @@ over its own stdout.
 from __future__ import annotations
 
 import os
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import anyio
@@ -25,12 +27,30 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_TOOLS = {"propose_plan", "execute_plan", "collect"}
 
 
-async def run(server_path: Path) -> int:
+async def run(server_path: Path, scratch: Path) -> int:
     failures: list[str] = []
+    # A throwaway database and log, passed through the environment.
+    #
+    # This spawns a REAL server against the REAL repo root, which is the point
+    # -- but without these two variables it also persists a real plan row into
+    # the real database, once per smoke run. Measured 2026-09-21: 82 of the 104
+    # plans on record were this test (NOTES.md section 39). Nothing broke, which
+    # is why it survived four phases; it quietly inflated the population behind
+    # every claim that counted plans.
+    #
+    # Merged over os.environ rather than passed alone: the SDK hands this
+    # straight to the child, and a child with no PATH cannot find its own
+    # interpreter's DLLs on Windows.
+    env = {
+        **os.environ,
+        "SUBAGENTS_DB_PATH": str(scratch / "smoke.db"),
+        "SUBAGENTS_LOG_FILE": str(scratch / "smoke.log"),
+    }
     params = StdioServerParameters(
         command=sys.executable,
         args=[str(server_path)],
         cwd=str(REPO_ROOT),
+        env=env,
     )
 
     async with Client(params) as client:
@@ -113,7 +133,8 @@ def main() -> int:
         sys.stderr.write(f"SMOKE FAIL | no such server: {server_path}\n")
         return 2
     try:
-        return anyio.run(run, server_path)
+        with tempfile.TemporaryDirectory(prefix="subagents-smoke-") as scratch:
+            return anyio.run(run, server_path, Path(scratch))
     except Exception as exc:  # noqa: BLE001
         # A protocol-stream failure typically surfaces here as a parse or
         # connection error rather than a clean assertion.

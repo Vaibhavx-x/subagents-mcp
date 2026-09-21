@@ -13,9 +13,11 @@ from pathlib import Path
 
 from conftest import task_entry
 from test_execution import GOOD_SCOPE, make_plan, make_result, run
+from test_hashing import norm
 
 from subagents.db import connect
 from subagents.execution import execute
+from subagents.hashing import sha256_file
 
 
 def writing_runner(writes: dict[str, list[tuple[str, str]]], status_for=None):
@@ -199,3 +201,108 @@ def test_a_clean_escalation_retry_clears_the_earlier_verdict(cfg, workspace):
 
     assert outcome.tainted_refs == []
     assert outcome.taints["a"].attribution == "task", "a retry runs alone"
+
+
+# ---------------------------------------------------- the evidence, not just the verdict
+# `file_hashes` sat in the schema from Phase 1 and nothing ever wrote to it
+# (NOTES.md section 38). These live here rather than in test_hashing.py because
+# what is being tested is the round trip into the database, which is the half
+# that was missing -- test_hashing.py proves the comparison, this proves the
+# record survives.
+def hash_rows(cfg, task_ref: str):
+    conn = connect(cfg.db_path)
+    try:
+        return conn.execute(
+            "SELECT h.path, h.phase, h.sha256 FROM file_hashes h"
+            " JOIN runs r ON r.id = h.run_id WHERE r.task_ref = ?"
+            " ORDER BY h.path, h.phase",
+            (task_ref,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def test_every_declared_path_is_recorded_before_and_after(cfg, workspace):
+    plan = make_plan(cfg, workspace,
+                     task_entry("a", reads=["README.md"], writes=["a.txt"]))
+
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=writing_runner({"a": [("a.txt", "done\n")]})))
+
+    rows = hash_rows(cfg, "a")
+    assert len(rows) == 4, "two declared paths x two phases"
+    assert sorted({r["phase"] for r in rows}) == ["post", "pre"]
+    assert len({r["path"] for r in rows}) == 2
+
+
+def test_the_recorded_hash_is_the_real_content_hash(cfg, workspace):
+    """Evidence that cannot be checked is not evidence. The stored value has to
+    be reproducible from the file afterwards, or the column is decoration."""
+    plan = make_plan(cfg, workspace,
+                     task_entry("a", reads=["README.md"], writes=["a.txt"]))
+
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=writing_runner({"a": [("a.txt", "done\n")]})))
+
+    post = {r["path"]: r["sha256"] for r in hash_rows(cfg, "a") if r["phase"] == "post"}
+    assert post[norm(workspace / "a.txt")] == sha256_file(workspace / "a.txt")
+    assert post[norm(workspace / "README.md")] == sha256_file(workspace / "README.md")
+
+
+def test_a_write_absent_beforehand_is_null_not_an_empty_string(cfg, workspace):
+    """A declared write legitimately does not exist at `pre`. NULL says
+    "was not there"; '' would say "was there and was empty", which is a
+    different fact about the world."""
+    plan = make_plan(cfg, workspace,
+                     task_entry("a", reads=["README.md"], writes=["fresh.txt"]))
+
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=writing_runner({"a": [("fresh.txt", "new\n")]})))
+
+    pre = {r["path"]: r["sha256"] for r in hash_rows(cfg, "a") if r["phase"] == "pre"}
+    assert pre[norm(workspace / "fresh.txt")] is None
+
+
+def test_the_manifest_is_never_persisted(cfg, workspace):
+    """The manifest is a change detector over the whole tree, not an audit
+    record. Writing it would put one row per file in the workspace into this
+    table and make it unreadable -- so an undeclared write must be visible in
+    `tainted_paths` and absent from `file_hashes`."""
+    for i in range(30):
+        (workspace / f"noise{i}.py").write_text(f"x = {i}\n", encoding="utf-8")
+
+    plan = make_plan(cfg, workspace,
+                     task_entry("a", reads=["README.md"], writes=["a.txt"]))
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=writing_runner({"a": [("a.txt", "done\n"),
+                                             ("sneaky.txt", "undeclared\n")]})))
+
+    rows = hash_rows(cfg, "a")
+    assert len(rows) == 4, "still only the two declared paths"
+    assert not any("sneaky" in r["path"] for r in rows)
+    assert run_row(cfg, "a")["tainted"] == 1, "but the taint verdict still saw it"
+
+
+def test_an_escalation_retry_replaces_the_first_attempts_hashes(cfg, workspace):
+    """The retry takes its own snapshot pair. Two generations of rows for one
+    run would make "what did this path look like before" ambiguous, which is
+    the only question this table answers."""
+    attempts: dict[str, int] = {}
+
+    async def failing_then_writing(task_ref, command, *, timeout_s, cwd, model, env=None):
+        n = attempts.get(task_ref, 0)
+        attempts[task_ref] = n + 1
+        if n == 0:
+            return make_result(task_ref, "failed")
+        (Path(cwd) / "a.txt").write_text("second attempt\n", encoding="utf-8")
+        return make_result(task_ref, "ok")
+
+    plan = make_plan(cfg, workspace,
+                     task_entry("a", reads=["README.md"], writes=["a.txt"]))
+    run(execute(GOOD_SCOPE, plan.plan_id, plan.plan_digest, cfg,
+                runner=failing_then_writing))
+
+    rows = hash_rows(cfg, "a")
+    assert len(rows) == 4, "one generation of rows, not two"
+    post = {r["path"]: r["sha256"] for r in rows if r["phase"] == "post"}
+    assert post[norm(workspace / "a.txt")] == sha256_file(workspace / "a.txt")

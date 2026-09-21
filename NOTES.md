@@ -903,3 +903,77 @@ the parent does with an unfamiliar tool is not something the tool controls.
 *Lesson kept: I read the transcript looking for a progress spinner and found a
 caveat about the measurement instead. The thing you went to check is rarely the
 most interesting thing in the log.*
+
+## 38. A table the schema promised and nothing ever wrote
+
+`file_hashes` has been in `db.py` since Phase 1. It has columns for a path, a
+phase (`pre`/`post`), and a sha256. `tools/inspect_db.py` was built to display
+a run's evidence. `CONTEXT.md` section 5 lists it as part of the design.
+
+It had **zero rows**, across 33 runs and four phases.
+
+The hashing genuinely happens -- `execution.py` snapshots before and after
+every wave, and the taint verdict is computed from real sha256 values. The
+evidence was then discarded the instant the verdict was derived from it. So
+`runs.tainted_paths` could say *that* a path changed and could never say what
+it changed **from**, which is the difference between a verdict and a record.
+Anyone auditing a flagged run afterwards had nothing to check.
+
+Nothing failed, which is why it lasted. A table with no rows raises nothing,
+returns cleanly, and reads as "no taint found" rather than "never looked".
+
+Fixed by folding the hashes into the same transaction as the verdict --
+deliberately one write, not two, because a run that ended with a verdict and
+no evidence would be worse than either alone. Declared paths only: the
+whole-tree manifest is a change detector, not an audit record, and persisting
+one row per file in the workspace would make the table unreadable and every
+wave slower. The docstring says so, so that nobody later "completes" it.
+
+*Lesson kept: I found this by reading the schema against `grep` for its own
+table name, while looking for somewhere to hang the cache. Four phases of
+tests never noticed, because every test asserted on the verdict and none
+asserted on the evidence behind it.*
+
+## 39. The test suite had been writing to the production database
+
+Found the same afternoon, from the same habit: check the number before quoting
+it. `pytest` ran, and the repo's `subagents.db` gained a row.
+
+`tests/smoke_stdio.py` spawns a **real** server subprocess against the **real**
+repo root -- which is the entire point of it; that is what catches stdout
+pollution that no in-memory test can see. But it spawned it with an inherited
+environment, so the server loaded the real config, and its `propose_plan` round
+trip persisted a real plan into the real database. Once per smoke run, since
+Phase 1.
+
+The count:
+
+| | |
+|---|---|
+| plans on record | 104 |
+| of which were this smoke test | **82** |
+| plans that ever had a run | 14 |
+
+**So a claim I published rested on a population that was 79% test artifacts.**
+The worktree decision in Phase 4 was recorded as "zero write-write conflicts
+across 87 plans". The conclusion survives -- zero conflicts is still zero
+conflicts, and none of the 14 real plans had one -- but the *evidence* was
+nothing like as strong as the sentence implied. 82 of those plans were a single
+read-only task named `smoke-read`, which cannot produce a write-write conflict
+even in principle. Quoting them as evidence about conflicts was quoting the
+denominator of a question they were never asked.
+
+Corrected in `CONTEXT.md` and `ZUDDL.md` to "across 14 plans that actually ran
+workers", which is the honest number and is admittedly thin.
+
+Fixed by passing `SUBAGENTS_DB_PATH` and `SUBAGENTS_LOG_FILE` into the child's
+environment, merged over `os.environ` rather than replacing it -- a child with
+no PATH cannot find its own interpreter's DLLs on Windows. The regression test
+asserts the production database's mtime is unchanged by a smoke run.
+
+*Lesson kept: this is the same failure as bench defect D1, one level up. There
+the harness counted runs that did not do the work; here the project counted
+plans that were never real work. Both times the number was bigger than the
+evidence, and both times nothing raised an error -- a count is not a thing that
+fails loudly when it is wrong.*
+

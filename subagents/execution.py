@@ -28,7 +28,7 @@ from .config import RATE_LIMIT_ATTEMPTS, RATE_LIMIT_BACKOFF_S, Config
 from .db import connect, init_db, write_transaction
 from .digest import compute_digest
 from .errors import PlanRefused
-from .hashing import IgnoreSpec, TaintReport, compare, snapshot
+from .hashing import IgnoreSpec, Snapshot, TaintReport, compare, snapshot
 from .models import Task
 from .waves import build_edges
 from .worker import (
@@ -295,19 +295,59 @@ def persist_result(config: Config, plan_id: str, task: Task, wave_index: int,
         )
 
 
-def persist_taint(config: Config, plan_id: str, task_ref: str, report: TaintReport) -> None:
-    """Record the taint verdict against a run that is already stored.
+def persist_verdict(config: Config, plan_id: str, task: Task, report: TaintReport,
+                    before: Snapshot, after: Snapshot) -> None:
+    """Record the taint verdict AND the hashes it was computed from.
 
     A second write rather than part of persist_result, because the post-run
     snapshot is taken once the whole wave has exited -- and the first write is
     what `collect` depends on after a cancellation, so it must not wait for it.
+
+    One transaction for both halves, not two. The verdict on its own is an
+    assertion: `tainted_paths` says a path changed and cannot say what it
+    changed from, so a reader auditing a run afterwards has nothing to check.
+    A run that ended with a verdict and no evidence would be worse than either
+    alone, and splitting the write is the only way to produce one.
+
+    **Declared paths only.** The manifest behind `undeclared` carries one entry
+    per file in the tree; it is a change detector, not an audit record, and
+    persisting it would make this table unreadable and every wave slower. If
+    that ever looks like an omission worth completing, it is not.
+
+    sha256 is NULL for a path absent at that phase. `hashing.sha256_file`
+    already returns None for absence and the meaning carries straight into the
+    column -- a declared write legitimately does not exist at `pre`.
     """
+    recorded = _now().isoformat()
+    paths = sorted(set(task.reads_norm) | set(task.writes_norm))
     with write_transaction(config.db_path) as conn:
         conn.execute(
             "UPDATE runs SET tainted = ?, tainted_paths = ? WHERE plan_id = ? AND task_ref = ?",
             (1 if report.tainted else 0,
              json.dumps(report.paths) if report.tainted else None,
-             plan_id, task_ref),
+             plan_id, task.task_ref),
+        )
+        row = conn.execute(
+            "SELECT id FROM runs WHERE plan_id = ? AND task_ref = ?",
+            (plan_id, task.task_ref),
+        ).fetchone()
+        if row is None:
+            # No run row means persist_result never landed -- nothing to attach
+            # evidence to, and inventing a row here would fabricate a run.
+            log.warning("plan %s: no run row for %s; hashes not recorded",
+                        plan_id, task.task_ref)
+            return
+        # Replaced, not appended. An escalation retry hashes the same paths
+        # again, and two generations of rows for one run would make "what did
+        # this path look like before" ambiguous -- the only question the table
+        # exists to answer.
+        conn.execute("DELETE FROM file_hashes WHERE run_id = ?", (row["id"],))
+        conn.executemany(
+            "INSERT INTO file_hashes (run_id, path, phase, sha256, recorded_at)"
+            " VALUES (?,?,?,?,?)",
+            [(row["id"], path, phase, snap.declared.get(path), recorded)
+             for path in paths
+             for phase, snap in (("pre", before), ("post", after))],
         )
 
 
@@ -533,7 +573,8 @@ async def execute(
                     log.warning("plan %s: %s tainted -- %s", plan_id, task.task_ref,
                                 report.describe())
                 await asyncio.shield(
-                    asyncio.to_thread(persist_taint, config, plan_id, task.task_ref, report)
+                    asyncio.to_thread(persist_verdict, config, plan_id, task, report,
+                                      before, after)
                 )
                 result.results.append(worker_result)
                 if not worker_result.ok:
@@ -615,7 +656,7 @@ async def _escalate_wave(runnable, worker_results, result, config, plan_id,
             log.warning("plan %s: %s tainted on retry -- %s", plan_id, task.task_ref,
                         report.describe())
         await asyncio.shield(
-            asyncio.to_thread(persist_taint, config, plan_id, task.task_ref, report)
+            asyncio.to_thread(persist_verdict, config, plan_id, task, report, before, after)
         )
 
         attempts += 1

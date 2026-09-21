@@ -82,3 +82,29 @@ def test_logging_handler_on_stdout_is_caught():
     assert result.returncode != 0, (
         "smoke test PASSED a server logging to stdout"
     )
+
+
+@pytest.mark.slow
+def test_smoke_does_not_write_to_the_real_database():
+    """The smoke test spawns a real server against the real repo root, which is
+    the point -- and for four phases it therefore persisted a real plan row
+    into the real database on every run. 82 of the 104 plans on record were
+    this test (NOTES.md section 39).
+
+    Nothing broke, which is exactly why it survived: it inflated the population
+    behind every claim that counted plans, and a count is not a thing that
+    fails loudly when it is wrong.
+    """
+    db = REPO_ROOT / "subagents.db"
+    before = db.stat().st_mtime_ns if db.is_file() else None
+
+    result = run_smoke(REPO_ROOT / "server.py")
+    assert result.returncode == 0, result.stderr
+
+    if before is None:
+        assert not db.is_file(), "smoke created the production database"
+    else:
+        assert db.stat().st_mtime_ns == before, (
+            "the smoke test wrote to the production database -- it must be given "
+            "SUBAGENTS_DB_PATH pointing somewhere disposable"
+        )

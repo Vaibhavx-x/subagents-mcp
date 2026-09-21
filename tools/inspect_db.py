@@ -31,6 +31,39 @@ def clip(text: object, n: int = 88) -> str:
     return s if len(s) <= n else s[: n - 1] + "\u2026"
 
 
+def show_hashes(conn: sqlite3.Connection, run_id: str) -> None:
+    """What each declared path hashed to before and after the worker ran.
+
+    `runs.tainted_paths` says a path changed; only this says what it changed
+    FROM, which is the difference between a verdict and evidence. Declared
+    paths only -- the whole-tree manifest is a detector, not a record, and is
+    deliberately not stored (see execution.persist_verdict).
+    """
+    rows = conn.execute(
+        "SELECT path, phase, sha256 FROM file_hashes WHERE run_id = ? ORDER BY path, phase",
+        (run_id,),
+    ).fetchall()
+    if not rows:
+        print("      hashes   : none recorded")
+        return
+    pairs: dict[str, dict[str, str | None]] = {}
+    for row in rows:
+        pairs.setdefault(row["path"], {})[row["phase"]] = row["sha256"]
+    print(f"      hashes   : {len(pairs)} declared path(s)")
+    for path, phases in sorted(pairs.items()):
+        pre, post = phases.get("pre"), phases.get("post")
+        mark = "same" if pre == post else "CHANGED"
+        if pre is None:
+            mark = "created" if post else "absent"
+        elif post is None:
+            mark = "DELETED"
+        print(f"        {mark:>8}  {short(pre)} -> {short(post)}  {path}")
+
+
+def short(digest: str | None) -> str:
+    return digest[:12] if digest else "-" * 12
+
+
 def main() -> int:
     db = load_config().db_path
     if not Path(db).is_file():
@@ -75,6 +108,7 @@ def main() -> int:
         print(f"      timing   : {r['started_at']} -> {r['finished_at']}")
         print(f"      stored   : {r['content_bytes'] or 0} bytes of transcript")
         print(f"      summary  : {clip(r['summary'])}")
+        show_hashes(conn, r["id"])
     conn.close()
     return 0
 
